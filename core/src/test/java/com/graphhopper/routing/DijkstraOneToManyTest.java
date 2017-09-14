@@ -17,6 +17,7 @@
  */
 package com.graphhopper.routing;
 
+import com.graphhopper.routing.profiles.BooleanEncodedValue;
 import com.graphhopper.routing.util.EdgeFilter;
 import com.graphhopper.routing.util.TraversalMode;
 import com.graphhopper.routing.weighting.FastestWeighting;
@@ -24,6 +25,7 @@ import com.graphhopper.storage.Graph;
 import com.graphhopper.storage.GraphBuilder;
 import com.graphhopper.storage.GraphHopperStorage;
 import com.graphhopper.util.EdgeIteratorState;
+import com.graphhopper.util.GHUtility;
 import com.graphhopper.util.Helper;
 import org.junit.Test;
 import org.junit.runner.RunWith;
@@ -61,7 +63,7 @@ public class DijkstraOneToManyTest extends AbstractRoutingAlgorithmTester {
         });
     }
 
-    public static Graph initGraphWeightLimit(Graph g) {
+    public static Graph initGraphWeightLimit(Graph g, BooleanEncodedValue accessEnc) {
         //      0----1
         //     /     |
         //    7--    |
@@ -70,17 +72,17 @@ public class DijkstraOneToManyTest extends AbstractRoutingAlgorithmTester {
         //   |   |   |
         //   4---3---2
 
-        g.edge(0, 1, 1, true);
-        g.edge(1, 2, 1, true);
+        GHUtility.createEdge(g, accessEnc, 0, 1, 1, true);
+        GHUtility.createEdge(g, accessEnc, 1, 2, 1, true);
 
-        g.edge(3, 2, 1, true);
-        g.edge(3, 5, 1, true);
-        g.edge(5, 7, 1, true);
-        g.edge(3, 4, 1, true);
-        g.edge(4, 6, 1, true);
-        g.edge(6, 7, 1, true);
-        g.edge(6, 5, 1, true);
-        g.edge(0, 7, 1, true);
+        GHUtility.createEdge(g, accessEnc, 3, 2, 1, true);
+        GHUtility.createEdge(g, accessEnc, 3, 5, 1, true);
+        GHUtility.createEdge(g, accessEnc, 5, 7, 1, true);
+        GHUtility.createEdge(g, accessEnc, 3, 4, 1, true);
+        GHUtility.createEdge(g, accessEnc, 4, 6, 1, true);
+        GHUtility.createEdge(g, accessEnc, 6, 7, 1, true);
+        GHUtility.createEdge(g, accessEnc, 6, 5, 1, true);
+        GHUtility.createEdge(g, accessEnc, 0, 7, 1, true);
         return g;
     }
 
@@ -127,7 +129,7 @@ public class DijkstraOneToManyTest extends AbstractRoutingAlgorithmTester {
     @Test
     public void testIssue182() {
         GraphHopperStorage storage = createGHStorage(false);
-        initGraph(storage);
+        initGraph(storage, carAccessEnc);
         RoutingAlgorithm algo = createAlgo(storage);
         Path p = algo.calcPath(0, 8);
         assertEquals(Helper.createTList(0, 7, 8), p.calcNodes());
@@ -140,13 +142,13 @@ public class DijkstraOneToManyTest extends AbstractRoutingAlgorithmTester {
     @Test
     public void testIssue239_and362() {
         GraphHopperStorage g = createGHStorage(false);
-        g.edge(0, 1, 1, true);
-        g.edge(1, 2, 1, true);
-        g.edge(2, 0, 1, true);
+        GHUtility.createEdge(g, carAccessEnc, 0, 1, 1, true);
+        GHUtility.createEdge(g, carAccessEnc, 1, 2, 1, true);
+        GHUtility.createEdge(g, carAccessEnc, 2, 0, 1, true);
 
-        g.edge(4, 5, 1, true);
-        g.edge(5, 6, 1, true);
-        g.edge(6, 4, 1, true);
+        GHUtility.createEdge(g, carAccessEnc, 4, 5, 1, true);
+        GHUtility.createEdge(g, carAccessEnc, 5, 6, 1, true);
+        GHUtility.createEdge(g, carAccessEnc, 6, 4, 1, true);
 
         DijkstraOneToMany algo = (DijkstraOneToMany) createAlgo(g);
         assertEquals(-1, algo.findEndNode(0, 4));
@@ -174,11 +176,11 @@ public class DijkstraOneToManyTest extends AbstractRoutingAlgorithmTester {
     @Test
     public void testDifferentEdgeFilter() {
         GraphHopperStorage g = new GraphBuilder(encodingManager).setCHGraph(new FastestWeighting(carEncoder)).create();
-        g.edge(4, 3, 10, true);
-        g.edge(3, 6, 10, true);
+        GHUtility.createEdge(g, carAccessEnc, 4, 3, 10, true);
+        GHUtility.createEdge(g, carAccessEnc, 3, 6, 10, true);
 
-        g.edge(4, 5, 10, true);
-        g.edge(5, 6, 10, true);
+        GHUtility.createEdge(g, carAccessEnc, 4, 5, 10, true);
+        GHUtility.createEdge(g, carAccessEnc, 5, 6, 10, true);
 
         DijkstraOneToMany algo = (DijkstraOneToMany) createAlgo(g);
         algo.setEdgeFilter(new EdgeFilter() {
@@ -202,27 +204,27 @@ public class DijkstraOneToManyTest extends AbstractRoutingAlgorithmTester {
         assertEquals(Helper.createTList(4, 5, 6), p.calcNodes());
     }
 
-    private Graph initGraph(Graph g) {
+    private Graph initGraph(Graph g, BooleanEncodedValue accessEnc) {
         // 0-1-2-3-4
         // |       /
         // 7-10----
         // \-8
-        g.edge(0, 1, 1, true);
-        g.edge(1, 2, 1, true);
-        g.edge(2, 3, 1, true);
-        g.edge(3, 4, 1, true);
-        g.edge(4, 10, 1, true);
+        GHUtility.createEdge(g, accessEnc, 0, 1, 1, true);
+        GHUtility.createEdge(g, accessEnc, 1, 2, 1, true);
+        GHUtility.createEdge(g, accessEnc, 2, 3, 1, true);
+        GHUtility.createEdge(g, accessEnc, 3, 4, 1, true);
+        GHUtility.createEdge(g, accessEnc, 4, 10, 1, true);
 
-        g.edge(0, 7, 1, true);
-        g.edge(7, 8, 1, true);
-        g.edge(7, 10, 10, true);
+        GHUtility.createEdge(g, accessEnc, 0, 7, 1, true);
+        GHUtility.createEdge(g, accessEnc, 7, 8, 1, true);
+        GHUtility.createEdge(g, accessEnc, 7, 10, 10, true);
         return g;
     }
 
     @Test
     public void testWeightLimit_issue380() {
         GraphHopperStorage graph = createGHStorage(false);
-        initGraphWeightLimit(graph);
+        initGraphWeightLimit(graph, carAccessEnc);
 
         DijkstraOneToMany algo = (DijkstraOneToMany) createAlgo(graph);
         algo.setWeightLimit(3);

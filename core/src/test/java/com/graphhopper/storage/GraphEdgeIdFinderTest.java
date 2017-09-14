@@ -19,12 +19,15 @@ package com.graphhopper.storage;
 
 import com.graphhopper.coll.GHIntHashSet;
 import com.graphhopper.routing.AbstractRoutingAlgorithmTester;
+import com.graphhopper.routing.profiles.BooleanEncodedValue;
+import com.graphhopper.routing.profiles.TagParserFactory;
 import com.graphhopper.routing.util.CarFlagEncoder;
 import com.graphhopper.routing.util.DefaultEdgeFilter;
 import com.graphhopper.routing.util.EncodingManager;
 import com.graphhopper.routing.util.FlagEncoder;
 import com.graphhopper.storage.index.LocationIndex;
 import com.graphhopper.storage.index.LocationIndexTree;
+import com.graphhopper.util.GHUtility;
 import com.graphhopper.util.shapes.Circle;
 import com.graphhopper.util.shapes.Shape;
 import org.junit.Test;
@@ -43,15 +46,16 @@ public class GraphEdgeIdFinderTest {
     public void testParseStringHints() {
         FlagEncoder encoder = new CarFlagEncoder();
         EncodingManager em = new EncodingManager.Builder().addAll(encoder).build();
+        BooleanEncodedValue accessEnc = em.getBooleanEncodedValue(TagParserFactory.Car.ACCESS);
         GraphHopperStorage graph = new GraphBuilder(em).create();
         // 0-1-2
         // | |
         // 3-4
-        graph.edge(0, 1, 1, true);
-        graph.edge(1, 2, 1, true);
-        graph.edge(3, 4, 1, true);
-        graph.edge(0, 3, 1, true);
-        graph.edge(1, 4, 1, true);
+        GHUtility.createEdge(graph, accessEnc, 0, 1, 1, true);
+        GHUtility.createEdge(graph, accessEnc, 1, 2, 1, true);
+        GHUtility.createEdge(graph, accessEnc, 3, 4, 1, true);
+        GHUtility.createEdge(graph, accessEnc, 0, 3, 1, true);
+        GHUtility.createEdge(graph, accessEnc, 1, 4, 1, true);
         AbstractRoutingAlgorithmTester.updateDistancesFor(graph, 0, 0.01, 0.00);
         AbstractRoutingAlgorithmTester.updateDistancesFor(graph, 1, 0.01, 0.01);
         AbstractRoutingAlgorithmTester.updateDistancesFor(graph, 2, 0.01, 0.02);
@@ -62,7 +66,7 @@ public class GraphEdgeIdFinderTest {
                 .prepareIndex();
 
         GraphEdgeIdFinder graphFinder = new GraphEdgeIdFinder(graph, locationIndex);
-        GraphEdgeIdFinder.BlockArea blockArea = graphFinder.parseBlockArea("0.01,0.005,1", new DefaultEdgeFilter(encoder));
+        GraphEdgeIdFinder.BlockArea blockArea = graphFinder.parseBlockArea("0.01,0.005,1", new DefaultEdgeFilter(accessEnc));
 
         GHIntHashSet blockedEdges = new GHIntHashSet();
         blockedEdges.add(0);
@@ -72,7 +76,7 @@ public class GraphEdgeIdFinderTest {
 
         // big area converts into shapes
         graphFinder = new GraphEdgeIdFinder(graph, locationIndex);
-        blockArea = graphFinder.parseBlockArea("0,0,1000", new DefaultEdgeFilter(encoder));
+        blockArea = graphFinder.parseBlockArea("0,0,1000", new DefaultEdgeFilter(accessEnc));
         blockedEdges.clear();
         assertEquals(blockedEdges, blockArea.blockedEdges);
         blockedShapes.add(new Circle(0, 0, 1000));

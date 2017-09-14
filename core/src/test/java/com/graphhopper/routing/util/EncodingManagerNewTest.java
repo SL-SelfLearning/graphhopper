@@ -1,33 +1,43 @@
-package com.graphhopper.routing.profiles;
+package com.graphhopper.routing.util;
 
 import com.graphhopper.reader.ReaderWay;
-import com.graphhopper.routing.util.AbstractFlagEncoder;
-import com.graphhopper.routing.util.EncodingManager;
+import com.graphhopper.routing.profiles.*;
 import com.graphhopper.routing.weighting.FastestCarWeighting;
 import com.graphhopper.routing.weighting.Weighting;
 import com.graphhopper.storage.GraphBuilder;
 import com.graphhopper.storage.GraphHopperStorage;
+import com.graphhopper.storage.IntsRef;
 import com.graphhopper.util.EdgeExplorer;
 import com.graphhopper.util.EdgeIterator;
 import com.graphhopper.util.EdgeIteratorState;
+import com.graphhopper.util.GHUtility;
 import org.junit.Ignore;
 import org.junit.Test;
 
 import java.util.Arrays;
+import java.util.Map;
 
 import static org.junit.Assert.*;
 
-public class EncodingManagerTest {
+public class EncodingManagerNewTest {
 
     private EncodingManager createEncodingManager() {
         // do not add surface property to test exception below
         TagsParserOSM parser = new TagsParserOSM();
+        final Map<String, Double> speedMap = TagParserFactory.Car.createSpeedMap();
+        ReaderWayFilter filter = new ReaderWayFilter() {
+            @Override
+            public boolean accept(ReaderWay way) {
+                return speedMap.containsKey(way.getTag("highway"));
+            }
+        };
         return new EncodingManager.Builder(parser, 4).
-                add(TagParserFactory.Car.createAverageSpeed(new DecimalEncodedValue("average_speed", 5, 0, 5, true))).
-                add(TagParserFactory.Car.createMaxSpeed(new DecimalEncodedValue("max_speed", 5, 50, 5, false))).
-                add(TagParserFactory.Car.createAccess(new BooleanEncodedValue("access", true))).
-                add(TagParserFactory.Truck.createWeight(new DecimalEncodedValue("weight", 5, 5, 1, false))).
-                add(TagParserFactory.createHighway(new StringEncodedValue("highway",
+                addGlobalEncodedValues().
+                add(TagParserFactory.Car.createAverageSpeed(new DecimalEncodedValue("average_speed", 5, 0, 5, true), speedMap)).
+                add(TagParserFactory.Car.createMaxSpeed(new DecimalEncodedValue("max_speed", 5, 50, 5, false), filter)).
+                add(TagParserFactory.Car.createAccess(new BooleanEncodedValue("access", true), filter)).
+                add(TagParserFactory.Truck.createMaxWeight(new DecimalEncodedValue("weight", 5, 5, 1, false), filter)).
+                add(TagParserFactory.createRoadClass(new StringEncodedValue("highway",
                         Arrays.asList("primary", "secondary", "tertiary"), "tertiary"))).
                 build();
     }
@@ -39,11 +49,10 @@ public class EncodingManagerTest {
         readerWay.setTag("weight", "4");
         readerWay.setTag("highway", "tertiary");
         readerWay.setTag("surface", "mud");
-        // interesting: we could move distance into a separate EncodedValue!!
 
         EncodingManager encodingManager = createEncodingManager();
         GraphHopperStorage g = new GraphBuilder(encodingManager).create();
-        EdgeIteratorState edge = g.edge(0, 1, 10, true);
+        EdgeIteratorState edge = GHUtility.createEdge(g, encodingManager.getBooleanEncodedValue(TagParserFactory.Car.ACCESS), 0, 1, 10, true);
 
         encodingManager.applyWayTags(readerWay, edge);
 
@@ -70,7 +79,7 @@ public class EncodingManagerTest {
 
         EncodingManager encodingManager = createEncodingManager();
         GraphHopperStorage g = new GraphBuilder(encodingManager).create();
-        EdgeIteratorState edge = g.edge(0, 1, 10, true);
+        EdgeIteratorState edge = GHUtility.createEdge(g, encodingManager.getBooleanEncodedValue(TagParserFactory.Car.ACCESS), 0, 1, 10, true);
 
         encodingManager.applyWayTags(readerWay, edge);
 
@@ -89,7 +98,7 @@ public class EncodingManagerTest {
 
         EncodingManager encodingManager = createEncodingManager();
         GraphHopperStorage g = new GraphBuilder(encodingManager).create();
-        EdgeIteratorState edge = g.edge(0, 1, 10, true);
+        EdgeIteratorState edge = GHUtility.createEdge(g, encodingManager.getBooleanEncodedValue(TagParserFactory.Car.ACCESS), 0, 1, 10, true);
 
         try {
             encodingManager.applyWayTags(readerWay, edge);
@@ -102,7 +111,7 @@ public class EncodingManagerTest {
     public void testNotInitializedProperty() {
         EncodingManager encodingManager = createEncodingManager();
         GraphHopperStorage g = new GraphBuilder(encodingManager).create();
-        EdgeIteratorState edge = g.edge(0, 1, 10, true);
+        EdgeIteratorState edge = GHUtility.createEdge(g, encodingManager.getBooleanEncodedValue(TagParserFactory.Car.ACCESS), 0, 1, 10, true);
         StringEncodedValue surface = new StringEncodedValue("surface", Arrays.asList("mud", "something"), "something");
         try {
             edge.get(surface);
@@ -116,7 +125,7 @@ public class EncodingManagerTest {
         EncodingManager encodingManager = createEncodingManager();
         Weighting weighting = new FastestCarWeighting(encodingManager, "some_weighting");
         GraphHopperStorage g = new GraphBuilder(encodingManager).create();
-        EdgeIteratorState edge = g.edge(0, 1, 10, true);
+        EdgeIteratorState edge = GHUtility.createEdge(g, encodingManager.getBooleanEncodedValue(TagParserFactory.Car.ACCESS), 0, 1, 10, true);
 
         DecimalEncodedValue maxSpeed = encodingManager.getEncodedValue("average_speed", DecimalEncodedValue.class);
         edge.set(maxSpeed, 26d);
@@ -127,9 +136,8 @@ public class EncodingManagerTest {
     @Test
     public void testDirectionDependentBit() {
         EncodingManager encodingManager = createEncodingManager();
-
         GraphHopperStorage g = new GraphBuilder(encodingManager).create();
-        EdgeIteratorState edge = g.edge(0, 1, 10, true);
+        EdgeIteratorState edge = GHUtility.createEdge(g, encodingManager.getBooleanEncodedValue(TagParserFactory.Car.ACCESS), 0, 1, 10, true);
 
         ReaderWay readerWay = new ReaderWay(0);
         readerWay.setTag("maxspeed", "30");
@@ -178,12 +186,11 @@ public class EncodingManagerTest {
             }
 
             @Override
-            public void parse(EdgeSetter setter, ReaderWay way, EdgeIteratorState edgeState) {
+            public void parse(IntsRef ints, ReaderWay way) {
                 final double speed = AbstractFlagEncoder.parseSpeed(way.getTag("maxspeed"));
                 final double speedFW = AbstractFlagEncoder.parseSpeed(way.getTag("maxspeed:forward"));
-                setter.set(edgeState, directed, speedFW > 0 ? speedFW : speed);
-                // TODO NOW make this more efficient
-                setter.set(edgeState.detach(true), directed, speed);
+                directed.setDecimal(false, ints, speedFW > 0 ? speedFW : speed);
+                directed.setDecimal(true, ints, speed);
             }
 
             @Override
@@ -203,7 +210,7 @@ public class EncodingManagerTest {
                 build();
 
         GraphHopperStorage g = new GraphBuilder(encodingManager).create();
-        EdgeIteratorState edge = g.edge(0, 1, 10, true);
+        EdgeIteratorState edge = GHUtility.createEdge(g, encodingManager.getBooleanEncodedValue(TagParserFactory.Car.ACCESS), 0, 1, 10, true);
 
         ReaderWay readerWay = new ReaderWay(0);
         readerWay.setTag("maxspeed", "30");
@@ -222,17 +229,17 @@ public class EncodingManagerTest {
     @Test
     public void testSkipWaysWithoutHighwayTag() {
         EncodingManager encodingManager = createEncodingManager();
-
+        CarFlagEncoder encoder = (CarFlagEncoder) encodingManager.getEncoder("car");
         ReaderWay readerWay = new ReaderWay(0);
         readerWay.setTag("highway", "primary");
-        assertEquals(1, encodingManager.acceptWay(readerWay));
+        assertTrue(encoder.getAccess(readerWay).isWay());
 
         // unknown value or no highway at all triggers filters from some EncodedValues
         readerWay.setTag("highway", "xy");
-        assertEquals(0, encodingManager.acceptWay(readerWay));
+        assertFalse(encoder.getAccess(readerWay).isWay());
 
         readerWay.removeTag("highway");
-        assertEquals(0, encodingManager.acceptWay(readerWay));
+        assertFalse(encoder.getAccess(readerWay).isWay());
     }
 
     @Test

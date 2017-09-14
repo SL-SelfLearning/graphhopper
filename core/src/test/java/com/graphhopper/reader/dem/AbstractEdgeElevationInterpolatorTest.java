@@ -20,6 +20,7 @@ package com.graphhopper.reader.dem;
 import com.graphhopper.coll.GHBitSetImpl;
 import com.graphhopper.coll.GHIntHashSet;
 import com.graphhopper.reader.ReaderWay;
+import com.graphhopper.routing.profiles.BooleanEncodedValue;
 import com.graphhopper.routing.util.DataFlagEncoder;
 import com.graphhopper.routing.util.EncodingManager;
 import com.graphhopper.routing.util.FootFlagEncoder;
@@ -45,14 +46,17 @@ public abstract class AbstractEdgeElevationInterpolatorTest {
     protected GraphHopperStorage graph;
     protected DataFlagEncoder dataFlagEncoder;
     protected AbstractEdgeElevationInterpolator edgeElevationInterpolator;
+    protected EncodingManager encodingManager;
+    protected BooleanEncodedValue dfAccessEnc;
 
     @SuppressWarnings("resource")
     @Before
     public void setUp() {
         dataFlagEncoder = new DataFlagEncoder();
-        graph = new GraphHopperStorage(new RAMDirectory(),
-                new EncodingManager.Builder().addAll(Arrays.asList(dataFlagEncoder, new FootFlagEncoder()), 8).build(),
-                true, new GraphExtension.NoOpExtension()).create(100);
+        encodingManager = new EncodingManager.Builder().addAll(Arrays.asList(dataFlagEncoder, new FootFlagEncoder()), 8).build();
+        dfAccessEnc = encodingManager.getBooleanEncodedValue(dataFlagEncoder.getPrefix() + "access");
+        graph = new GraphHopperStorage(new RAMDirectory(), encodingManager, true,
+                new GraphExtension.NoOpExtension()).create(100);
 
         edgeElevationInterpolator = createEdgeElevationInterpolator();
 

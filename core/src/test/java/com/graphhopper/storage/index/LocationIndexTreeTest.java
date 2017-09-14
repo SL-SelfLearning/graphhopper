@@ -18,11 +18,10 @@
 package com.graphhopper.storage.index;
 
 import com.graphhopper.coll.GHIntHashSet;
+import com.graphhopper.routing.profiles.BooleanEncodedValue;
+import com.graphhopper.routing.profiles.TagParserFactory;
 import com.graphhopper.routing.util.*;
-import com.graphhopper.storage.Directory;
-import com.graphhopper.storage.Graph;
-import com.graphhopper.storage.NodeAccess;
-import com.graphhopper.storage.RAMDirectory;
+import com.graphhopper.storage.*;
 import com.graphhopper.util.*;
 import com.graphhopper.util.shapes.GHPoint;
 import org.junit.Test;
@@ -40,6 +39,7 @@ import static org.junit.Assert.assertTrue;
  */
 public class LocationIndexTreeTest extends AbstractLocationIndexTester {
     protected final EncodingManager encodingManager = new EncodingManager.Builder().addAllFlagEncoders("car").build();
+    protected final BooleanEncodedValue carAccessEnc = encodingManager.getBooleanEncodedValue(TagParserFactory.Car.ACCESS);
 
     @Override
     public LocationIndexTree createIndex(Graph g, int resolution) {
@@ -65,7 +65,7 @@ public class LocationIndexTreeTest extends AbstractLocationIndexTester {
     // |1----3-\|
     // |____/   4
     // 2-------/
-    Graph createTestGraph(EncodingManager em) {
+    Graph createTestGraph(EncodingManager em, BooleanEncodedValue carAccessEnc) {
         Graph graph = createGHStorage(new RAMDirectory(), em, false);
         NodeAccess na = graph.getNodeAccess();
         na.setNode(0, 0.5, -0.5);
@@ -73,19 +73,19 @@ public class LocationIndexTreeTest extends AbstractLocationIndexTester {
         na.setNode(2, -1, -1);
         na.setNode(3, -0.4, 0.9);
         na.setNode(4, -0.6, 1.6);
-        graph.edge(0, 1, 1, true);
-        graph.edge(0, 2, 1, true);
-        graph.edge(0, 4, 1, true);
-        graph.edge(1, 3, 1, true);
-        graph.edge(2, 3, 1, true);
-        graph.edge(2, 4, 1, true);
-        graph.edge(3, 4, 1, true);
+        GHUtility.createEdge(graph, carAccessEnc, 0, 1, 1, true);
+        GHUtility.createEdge(graph, carAccessEnc, 0, 2, 1, true);
+        GHUtility.createEdge(graph, carAccessEnc, 0, 4, 1, true);
+        GHUtility.createEdge(graph, carAccessEnc, 1, 3, 1, true);
+        GHUtility.createEdge(graph, carAccessEnc, 2, 3, 1, true);
+        GHUtility.createEdge(graph, carAccessEnc, 2, 4, 1, true);
+        GHUtility.createEdge(graph, carAccessEnc, 3, 4, 1, true);
         return graph;
     }
 
     @Test
     public void testSnappedPointAndGeometry() {
-        Graph graph = createTestGraph(encodingManager);
+        Graph graph = createTestGraph(encodingManager, carAccessEnc);
         LocationIndex index = createIndex(graph, -1);
         // query directly the tower node
         QueryResult res = index.findClosest(-0.4, 0.9, EdgeFilter.ALL_EDGES);
@@ -104,7 +104,7 @@ public class LocationIndexTreeTest extends AbstractLocationIndexTester {
 
     @Test
     public void testInMemIndex() {
-        Graph graph = createTestGraph(encodingManager);
+        Graph graph = createTestGraph(encodingManager, carAccessEnc);
         LocationIndexTree index = createIndexNoPrepare(graph, 50000);
         index.prepareAlgo();
         LocationIndexTree.InMemConstructionIndex inMemIndex = index.getPrepareInMemIndex();
@@ -191,7 +191,7 @@ public class LocationIndexTreeTest extends AbstractLocationIndexTester {
 
     @Test
     public void testInMemIndex3() {
-        LocationIndexTree index = createIndexNoPrepare(createTestGraph(encodingManager), 10000);
+        LocationIndexTree index = createIndexNoPrepare(createTestGraph(encodingManager, carAccessEnc), 10000);
         index.prepareAlgo();
         LocationIndexTree.InMemConstructionIndex inMemIndex = index.getPrepareInMemIndex();
         assertEquals(Helper.createTList(64, 4), index.getEntries());
@@ -210,7 +210,7 @@ public class LocationIndexTreeTest extends AbstractLocationIndexTester {
 
     @Test
     public void testReverseSpatialKey() {
-        LocationIndexTree index = createIndex(createTestGraph(encodingManager), 200);
+        LocationIndexTree index = createIndex(createTestGraph(encodingManager, carAccessEnc), 200);
         assertEquals(Helper.createTList(64, 64, 64, 4), index.getEntries());
 
         // 10111110111110101010
@@ -227,9 +227,9 @@ public class LocationIndexTreeTest extends AbstractLocationIndexTester {
         na.setNode(2, 51.2, 9.4);
         na.setNode(3, 49, 10);
 
-        graph.edge(1, 0, 1000, true);
-        graph.edge(0, 2, 1000, true);
-        graph.edge(0, 3, 1000, true).setWayGeometry(Helper.createPointList(51.21, 9.43));
+        GHUtility.createEdge(graph, carAccessEnc, 1, 0, 1000, true);
+        GHUtility.createEdge(graph, carAccessEnc, 0, 2, 1000, true);
+        GHUtility.createEdge(graph, carAccessEnc, 0, 3, 1000, true).setWayGeometry(Helper.createPointList(51.21, 9.43));
         LocationIndex index = createIndex(graph, -1);
         assertEquals(2, findID(index, 51.2, 9.4));
     }
@@ -251,14 +251,14 @@ public class LocationIndexTreeTest extends AbstractLocationIndexTester {
         na.setNode(2, -1, -1);
         na.setNode(3, -0.4, 0.9);
         na.setNode(4, -0.6, 1.6);
-        graph.edge(0, 1, 1, true);
-        graph.edge(0, 2, 1, true);
+        GHUtility.createEdge(graph, carAccessEnc, 0, 1, 1, true);
+        GHUtility.createEdge(graph, carAccessEnc, 0, 2, 1, true);
         // insert A and B, without this we would get 0 for 0,0
-        graph.edge(0, 4, 1, true).setWayGeometry(Helper.createPointList(1, 1));
-        graph.edge(1, 3, 1, true).setWayGeometry(Helper.createPointList(0, 0));
-        graph.edge(2, 3, 1, true);
-        graph.edge(2, 4, 1, true);
-        graph.edge(3, 4, 1, true);
+        GHUtility.createEdge(graph, carAccessEnc, 0, 4, 1, true).setWayGeometry(Helper.createPointList(1, 1));
+        GHUtility.createEdge(graph, carAccessEnc, 1, 3, 1, true).setWayGeometry(Helper.createPointList(0, 0));
+        GHUtility.createEdge(graph, carAccessEnc, 2, 3, 1, true);
+        GHUtility.createEdge(graph, carAccessEnc, 2, 4, 1, true);
+        GHUtility.createEdge(graph, carAccessEnc, 3, 4, 1, true);
         return graph;
     }
 
@@ -280,9 +280,9 @@ public class LocationIndexTreeTest extends AbstractLocationIndexTester {
         na.setNode(20, 52, 9);
         na.setNode(30, 51.2, 9.4);
         na.setNode(50, 49, 10);
-        g.edge(20, 50, 1, true).setWayGeometry(Helper.createPointList(51.25, 9.43));
-        g.edge(10, 20, 1, true);
-        g.edge(20, 30, 1, true);
+        GHUtility.createEdge(g, carAccessEnc, 20, 50, 1, true).setWayGeometry(Helper.createPointList(51.25, 9.43));
+        GHUtility.createEdge(g, carAccessEnc, 10, 20, 1, true);
+        GHUtility.createEdge(g, carAccessEnc, 20, 30, 1, true);
 
         LocationIndex index = createIndex(g, 2000);
         assertEquals(20, findID(index, 51.25, 9.43));
@@ -290,7 +290,7 @@ public class LocationIndexTreeTest extends AbstractLocationIndexTester {
 
     @Test
     public void testEdgeFilter() {
-        Graph graph = createTestGraph(encodingManager);
+        Graph graph = createTestGraph(encodingManager, carAccessEnc);
         LocationIndexTree index = createIndex(graph, -1);
 
         assertEquals(1, index.findClosest(-.6, -.6, EdgeFilter.ALL_EDGES).getClosestNode());
@@ -356,50 +356,50 @@ public class LocationIndexTreeTest extends AbstractLocationIndexTester {
         // top right
         na.setNode(101, 49.96053, 11.58814);
 
-        graph.edge(0, 1, 10, true);
-        graph.edge(1, 2, 10, true);
-        graph.edge(2, 3, 10, true);
-        graph.edge(3, 4, 10, true);
-        graph.edge(4, 5, 10, true);
-        graph.edge(6, 7, 10, true);
+        GHUtility.createEdge(graph, carAccessEnc, 0, 1, 10, true);
+        GHUtility.createEdge(graph, carAccessEnc, 1, 2, 10, true);
+        GHUtility.createEdge(graph, carAccessEnc, 2, 3, 10, true);
+        GHUtility.createEdge(graph, carAccessEnc, 3, 4, 10, true);
+        GHUtility.createEdge(graph, carAccessEnc, 4, 5, 10, true);
+        GHUtility.createEdge(graph, carAccessEnc, 6, 7, 10, true);
 
-        graph.edge(2, 8, 10, true);
-        graph.edge(2, 9, 10, true);
-        graph.edge(3, 10, 10, true);
-        graph.edge(4, 11, 10, true);
-        graph.edge(5, 12, 10, true);
-        graph.edge(6, 13, 10, true);
+        GHUtility.createEdge(graph, carAccessEnc, 2, 8, 10, true);
+        GHUtility.createEdge(graph, carAccessEnc, 2, 9, 10, true);
+        GHUtility.createEdge(graph, carAccessEnc, 3, 10, 10, true);
+        GHUtility.createEdge(graph, carAccessEnc, 4, 11, 10, true);
+        GHUtility.createEdge(graph, carAccessEnc, 5, 12, 10, true);
+        GHUtility.createEdge(graph, carAccessEnc, 6, 13, 10, true);
 
-        graph.edge(1, 14, 10, true);
-        graph.edge(2, 15, 10, true);
-        graph.edge(5, 16, 10, true);
-        graph.edge(14, 15, 10, true);
-        graph.edge(16, 17, 10, true);
-        graph.edge(16, 20, 10, true);
-        graph.edge(16, 25, 10, true);
+        GHUtility.createEdge(graph, carAccessEnc, 1, 14, 10, true);
+        GHUtility.createEdge(graph, carAccessEnc, 2, 15, 10, true);
+        GHUtility.createEdge(graph, carAccessEnc, 5, 16, 10, true);
+        GHUtility.createEdge(graph, carAccessEnc, 14, 15, 10, true);
+        GHUtility.createEdge(graph, carAccessEnc, 16, 17, 10, true);
+        GHUtility.createEdge(graph, carAccessEnc, 16, 20, 10, true);
+        GHUtility.createEdge(graph, carAccessEnc, 16, 25, 10, true);
 
-        graph.edge(18, 14, 10, true);
-        graph.edge(18, 19, 10, true);
-        graph.edge(18, 21, 10, true);
-        graph.edge(19, 21, 10, true);
-        graph.edge(21, 24, 10, true);
-        graph.edge(23, 24, 10, true);
-        graph.edge(24, 25, 10, true);
-        graph.edge(26, 27, 10, true);
-        graph.edge(27, 28, 10, true);
-        graph.edge(28, 29, 10, true);
+        GHUtility.createEdge(graph, carAccessEnc, 18, 14, 10, true);
+        GHUtility.createEdge(graph, carAccessEnc, 18, 19, 10, true);
+        GHUtility.createEdge(graph, carAccessEnc, 18, 21, 10, true);
+        GHUtility.createEdge(graph, carAccessEnc, 19, 21, 10, true);
+        GHUtility.createEdge(graph, carAccessEnc, 21, 24, 10, true);
+        GHUtility.createEdge(graph, carAccessEnc, 23, 24, 10, true);
+        GHUtility.createEdge(graph, carAccessEnc, 24, 25, 10, true);
+        GHUtility.createEdge(graph, carAccessEnc, 26, 27, 10, true);
+        GHUtility.createEdge(graph, carAccessEnc, 27, 28, 10, true);
+        GHUtility.createEdge(graph, carAccessEnc, 28, 29, 10, true);
 
-        graph.edge(24, 30, 10, true);
-        graph.edge(24, 31, 10, true);
-        graph.edge(26, 32, 10, true);
-        graph.edge(27, 33, 10, true);
-        graph.edge(28, 34, 10, true);
+        GHUtility.createEdge(graph, carAccessEnc, 24, 30, 10, true);
+        GHUtility.createEdge(graph, carAccessEnc, 24, 31, 10, true);
+        GHUtility.createEdge(graph, carAccessEnc, 26, 32, 10, true);
+        GHUtility.createEdge(graph, carAccessEnc, 27, 33, 10, true);
+        GHUtility.createEdge(graph, carAccessEnc, 28, 34, 10, true);
         return graph;
     }
 
     @Test
     public void testRMin() {
-        Graph graph = createTestGraph(encodingManager);
+        Graph graph = createTestGraph(encodingManager, carAccessEnc);
         LocationIndexTree index = createIndex(graph, 50000);
 
         //query: 0.05 | -0.3
@@ -434,6 +434,8 @@ public class LocationIndexTreeTest extends AbstractLocationIndexTester {
         BikeFlagEncoder bikeEncoder = new BikeFlagEncoder();
 
         EncodingManager tmpEM = new EncodingManager.Builder().addAll(carEncoder, bikeEncoder).build();
+        BooleanEncodedValue bikeAccessEnc = tmpEM.getBooleanEncodedValue(bikeEncoder.getPrefix() + "access");
+        BooleanEncodedValue carAccessEnc = tmpEM.getBooleanEncodedValue(carEncoder.getPrefix() + "access");
         Graph graph = createGHStorage(new RAMDirectory(), tmpEM, false);
         NodeAccess na = graph.getNodeAccess();
 
@@ -444,32 +446,38 @@ public class LocationIndexTreeTest extends AbstractLocationIndexTester {
                 int index = lonIdx * 10 + latIdx;
                 na.setNode(index, 0.01 * latIdx, 0.01 * lonIdx);
                 if (latIdx < MAX - 1)
-                    graph.edge(index, index + 1, 1000, true);
+                    GHUtility.createEdge(graph, carAccessEnc, index, index + 1, 1000, true);
 
                 if (lonIdx < MAX - 1)
-                    graph.edge(index, index + 10, 1000, true);
+                    GHUtility.createEdge(graph, carAccessEnc, index, index + 10, 1000, true);
             }
         }
 
         // reduce access for bike to two edges only
         AllEdgesIterator iter = graph.getAllEdges();
         while (iter.next()) {
-            iter.setFlags(bikeEncoder.setAccess(iter.getFlags(), false, false));
+            IntsRef ints = encodingManager.createIntsRef();
+            bikeAccessEnc.setBool(false, ints, false);
+            bikeAccessEnc.setBool(true, ints, false);
+            iter.setData(ints);
         }
         for (EdgeIteratorState edge : Arrays.asList(GHUtility.getEdge(graph, 0, 1), GHUtility.getEdge(graph, 1, 2))) {
-            edge.setFlags(bikeEncoder.setAccess(edge.getFlags(), true, true));
+            IntsRef ints = encodingManager.createIntsRef();
+            bikeAccessEnc.setBool(false, ints, true);
+            bikeAccessEnc.setBool(true, ints, true);
+            edge.setData(ints);
         }
 
         LocationIndexTree index = createIndexNoPrepare(graph, 500);
         index.prepareIndex();
         index.setMaxRegionSearch(8);
 
-        EdgeFilter carFilter = new DefaultEdgeFilter(carEncoder, true, true);
+        EdgeFilter carFilter = new DefaultEdgeFilter(carAccessEnc, true, true);
         QueryResult qr = index.findClosest(0.03, 0.03, carFilter);
         assertTrue(qr.isValid());
         assertEquals(33, qr.getClosestNode());
 
-        EdgeFilter bikeFilter = new DefaultEdgeFilter(bikeEncoder, true, true);
+        EdgeFilter bikeFilter = new DefaultEdgeFilter(bikeAccessEnc, true, true);
         qr = index.findClosest(0.03, 0.03, bikeFilter);
         assertTrue(qr.isValid());
         assertEquals(2, qr.getClosestNode());
@@ -492,22 +500,22 @@ public class LocationIndexTreeTest extends AbstractLocationIndexTester {
         na.setNode(7, 0, -179.5);
 
         // just use 1 as distance which is incorrect but does not matter in this unit case
-        graph.edge(0, 1, 1, true);
-        graph.edge(0, 4, 1, true);
-        graph.edge(1, 5, 1, true);
-        graph.edge(4, 5, 1, true);
+        GHUtility.createEdge(graph, carAccessEnc, 0, 1, 1, true);
+        GHUtility.createEdge(graph, carAccessEnc, 0, 4, 1, true);
+        GHUtility.createEdge(graph, carAccessEnc, 1, 5, 1, true);
+        GHUtility.createEdge(graph, carAccessEnc, 4, 5, 1, true);
 
-        graph.edge(2, 3, 1, true);
-        graph.edge(2, 6, 1, true);
-        graph.edge(3, 7, 1, true);
-        graph.edge(6, 7, 1, true);
+        GHUtility.createEdge(graph, carAccessEnc, 2, 3, 1, true);
+        GHUtility.createEdge(graph, carAccessEnc, 2, 6, 1, true);
+        GHUtility.createEdge(graph, carAccessEnc, 3, 7, 1, true);
+        GHUtility.createEdge(graph, carAccessEnc, 6, 7, 1, true);
 
         // as last edges: create cross boundary edges
         // See #667 where the recommendation is to adjust the import and introduce two pillar nodes 
         // where the connection is cross boundary and would be okay if ignored as real length is 0
-        graph.edge(1, 2, 1, true).setWayGeometry(Helper.createPointList(0, 180, 0, -180));
+        GHUtility.createEdge(graph, carAccessEnc, 1, 2, 1, true).setWayGeometry(Helper.createPointList(0, 180, 0, -180));
         // but this unit test succeeds even without this adjusted import:
-        graph.edge(5, 6, 1, true);
+        GHUtility.createEdge(graph, carAccessEnc, 5, 6, 1, true);
 
         LocationIndexTree index = createIndexNoPrepare(graph, 500);
         index.prepareIndex();

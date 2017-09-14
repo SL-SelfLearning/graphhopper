@@ -18,6 +18,8 @@
 package com.graphhopper.routing;
 
 import com.graphhopper.routing.AlternativeRoute.AlternativeBidirSearch;
+import com.graphhopper.routing.profiles.BooleanEncodedValue;
+import com.graphhopper.routing.profiles.TagParserFactory;
 import com.graphhopper.routing.util.CarFlagEncoder;
 import com.graphhopper.routing.util.EncodingManager;
 import com.graphhopper.routing.util.FlagEncoder;
@@ -28,6 +30,7 @@ import com.graphhopper.storage.Graph;
 import com.graphhopper.storage.GraphExtension;
 import com.graphhopper.storage.GraphHopperStorage;
 import com.graphhopper.storage.RAMDirectory;
+import com.graphhopper.util.GHUtility;
 import com.graphhopper.util.Helper;
 import org.junit.Test;
 import org.junit.runner.RunWith;
@@ -61,7 +64,7 @@ public class AlternativeRouteTest {
         });
     }
 
-    public GraphHopperStorage createTestGraph(boolean fullGraph, EncodingManager tmpEM) {
+    public GraphHopperStorage createTestGraph(boolean fullGraph, EncodingManager tmpEM, BooleanEncodedValue accessEnc) {
         GraphHopperStorage graph = new GraphHopperStorage(new RAMDirectory(), tmpEM, false, new GraphExtension.NoOpExtension());
         graph.create(1000);
 
@@ -72,22 +75,22 @@ public class AlternativeRouteTest {
          5--6-7---8
         
          */
-        graph.edge(1, 9, 1, true);
-        graph.edge(9, 2, 1, true);
+        GHUtility.createEdge(graph, accessEnc, 1, 9, 1, true);
+        GHUtility.createEdge(graph, accessEnc, 9, 2, 1, true);
         if (fullGraph)
-            graph.edge(2, 3, 1, true);
-        graph.edge(3, 4, 1, true);
-        graph.edge(4, 10, 1, true);
+            GHUtility.createEdge(graph, accessEnc, 2, 3, 1, true);
+        GHUtility.createEdge(graph, accessEnc, 3, 4, 1, true);
+        GHUtility.createEdge(graph, accessEnc, 4, 10, 1, true);
 
-        graph.edge(5, 6, 1, true);
+        GHUtility.createEdge(graph, accessEnc, 5, 6, 1, true);
 
-        graph.edge(6, 7, 1, true);
-        graph.edge(7, 8, 1, true);
+        GHUtility.createEdge(graph, accessEnc, 6, 7, 1, true);
+        GHUtility.createEdge(graph, accessEnc, 7, 8, 1, true);
 
         if (fullGraph)
-            graph.edge(1, 5, 2, true);
-        graph.edge(6, 3, 1, true);
-        graph.edge(4, 8, 1, true);
+            GHUtility.createEdge(graph, accessEnc, 1, 5, 2, true);
+        GHUtility.createEdge(graph, accessEnc, 6, 3, 1, true);
+        GHUtility.createEdge(graph, accessEnc, 4, 8, 1, true);
 
         updateDistancesFor(graph, 5, 0.00, 0.05);
         updateDistancesFor(graph, 6, 0.00, 0.10);
@@ -106,7 +109,7 @@ public class AlternativeRouteTest {
     @Test
     public void testCalcAlternatives() throws Exception {
         Weighting weighting = new FastestWeighting(carFE);
-        GraphHopperStorage g = createTestGraph(true, em);
+        Graph g = createTestGraph(true, em, em.getBooleanEncodedValue(TagParserFactory.Car.ACCESS));
         AlternativeRoute altDijkstra = new AlternativeRoute(g, weighting, traversalMode);
         altDijkstra.setMaxShareFactor(0.5);
         altDijkstra.setMaxWeightFactor(2);
@@ -135,7 +138,7 @@ public class AlternativeRouteTest {
     @Test
     public void testCalcAlternatives2() throws Exception {
         Weighting weighting = new FastestWeighting(carFE);
-        Graph g = createTestGraph(true, em);
+        Graph g = createTestGraph(true, em, em.getBooleanEncodedValue(TagParserFactory.Car.ACCESS));
         AlternativeRoute altDijkstra = new AlternativeRoute(g, weighting, traversalMode);
         altDijkstra.setMaxPaths(3);
         altDijkstra.setMaxShareFactor(0.7);
@@ -171,7 +174,7 @@ public class AlternativeRouteTest {
 
     @Test
     public void testDisconnectedAreas() {
-        Graph g = createTestGraph(true, em);
+        Graph g = createTestGraph(true, em, em.getBooleanEncodedValue(TagParserFactory.Car.ACCESS));
 
         // one single disconnected node
         updateDistancesFor(g, 20, 0.00, -0.01);

@@ -20,9 +20,9 @@ package com.graphhopper.routing.profiles;
 import com.graphhopper.storage.IntsRef;
 
 /**
- * This class defines where to store an integer. It is important to note that 1. the range of the integer is
+ * This class defines where to store an integer. It is important to note that: 1. the range of the integer is
  * highly limited (unlike the Java 32bit integer values) so that the storeable part of it fits into the
- * specified number of bits (using the internal shift value) and 2. the default value is always 0.
+ * specified number of bits (using the internal shift value) and 2. the 'raw' default value is always 0.
  * <p>
  * To illustrate why the default is always 0 and how you can still use other defaults imagine the storage engine
  * creates a new entry. Either the engine knows the higher level logic or we assume the default value is 0 and
@@ -56,6 +56,9 @@ public class IntEncodedValue implements EncodedValue {
     }
 
     /**
+     * This constructor reserve the specified number of bits in the underlying datastructure or twice the amount if
+     * store2DirectedValues is true.
+     *
      * @param defaultValue defines which value to return if the 'raw' integer value is 0.
      */
     public IntEncodedValue(String name, int bits, int defaultValue, boolean store2DirectedValues) {
@@ -101,8 +104,7 @@ public class IntEncodedValue implements EncodedValue {
     }
 
     /**
-     * This method 'merges' the specified integer value with the specified 'flags' to return a value that can
-     * be stored.
+     * This method stores the specified integer value in the specified IntsRef.
      */
     public final void setInt(boolean reverse, IntsRef ref, int value) {
         checkValue(value);

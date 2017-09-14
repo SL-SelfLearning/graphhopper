@@ -88,7 +88,7 @@
     encoder.supportTurnCost is replaced by encoder.supports(TurnWeighting.class)
     CmdArgs is now a Map<String, String> instead Map<String, Object>. The value will be parsed up on every getXY call, makes storing string vs. object less error-prone
     removed GHRequest.getHint, instead use the provided methods in GHRequest.getHints().getXY and GHRequest.getHints().put
-    important graph incompatibility as properties cannot be loaded. renamed osmreader.bytesForFlags to graph.bytesForFlags, renamed config property osmreader.acceptWay to graph.flagEncoders
+    important graph incompatibility as properties cannot be loaded. renamed osmreader.bytesForFlags to graph.bytesForFlags, renamed config property osmreader.getAccess to graph.flagEncoders
     default weighting is now fastest, fixing #261
     moved method GraphHopper.main into tools module and class com.graphhopper.tools.Import, see #250
     refactored GraphHopper.createWeighting to accept more than one configuration option, see #237

@@ -18,6 +18,8 @@
 package com.graphhopper.routing;
 
 import com.carrotsearch.hppc.IntIndexedContainer;
+import com.graphhopper.routing.profiles.BooleanEncodedValue;
+import com.graphhopper.routing.profiles.DecimalEncodedValue;
 import com.graphhopper.routing.util.*;
 import com.graphhopper.routing.weighting.FastestWeighting;
 import com.graphhopper.routing.weighting.ShortestWeighting;
@@ -44,7 +46,11 @@ public abstract class AbstractRoutingAlgorithmTester {
     protected static final EncodingManager encodingManager = new EncodingManager.Builder().addAllFlagEncoders("car,foot").build();
     private static final DistanceCalc distCalc = new DistanceCalcEarth();
     protected FlagEncoder carEncoder;
+    protected BooleanEncodedValue carAccessEnc;
+    protected DecimalEncodedValue carAverageSpeedEnc;
     protected FlagEncoder footEncoder;
+    private BooleanEncodedValue footAccessEnc;
+    private DecimalEncodedValue footAverageSpeedEnc;
     protected AlgorithmOptions defaultOpts;
 
     // 0-1-2-3-4
@@ -52,18 +58,17 @@ public abstract class AbstractRoutingAlgorithmTester {
     // |    8  |
     // \   /   |
     //  7-6----5
-    public static Graph initBiGraph(Graph graph) {
-        // distance will be overwritten in second step as we need to calculate it from lat,lon
-        graph.edge(0, 1, 1, true);
-        graph.edge(1, 2, 1, true);
-        graph.edge(2, 3, 1, true);
-        graph.edge(3, 4, 1, true);
-        graph.edge(4, 5, 1, true);
-        graph.edge(5, 6, 1, true);
-        graph.edge(6, 7, 1, true);
-        graph.edge(7, 0, 1, true);
-        graph.edge(3, 8, 1, true);
-        graph.edge(8, 6, 1, true);
+    public static Graph initBiGraph(Graph graph, BooleanEncodedValue accessEnc) {
+        GHUtility.createEdge(graph, accessEnc, 0, 1, true);
+        GHUtility.createEdge(graph, accessEnc, 1, 2, true);
+        GHUtility.createEdge(graph, accessEnc, 2, 3, true);
+        GHUtility.createEdge(graph, accessEnc, 3, 4, true);
+        GHUtility.createEdge(graph, accessEnc, 4, 5, true);
+        GHUtility.createEdge(graph, accessEnc, 5, 6, true);
+        GHUtility.createEdge(graph, accessEnc, 6, 7, true);
+        GHUtility.createEdge(graph, accessEnc, 7, 0, true);
+        GHUtility.createEdge(graph, accessEnc, 3, 8, true);
+        GHUtility.createEdge(graph, accessEnc, 8, 6, true);
 
         // we need lat,lon for edge precise queries because the distances of snapped point
         // to adjacent nodes is calculated from lat,lon of the necessary points
@@ -91,7 +96,7 @@ public abstract class AbstractRoutingAlgorithmTester {
         }
     }
 
-    protected static GraphHopperStorage createMatrixAlikeGraph(GraphHopperStorage tmpGraph) {
+    protected static GraphHopperStorage createMatrixAlikeGraph(GraphHopperStorage tmpGraph, BooleanEncodedValue accessEnc) {
         int WIDTH = 10;
         int HEIGHT = 15;
         int[][] matrix = new int[WIDTH][HEIGHT];
@@ -113,7 +118,7 @@ public abstract class AbstractRoutingAlgorithmTester {
                     if (print)
                         System.out.print(" " + (int) dist + "\t           ");
 
-                    tmpGraph.edge(matrix[w][h], matrix[w][h - 1], dist, true);
+                    GHUtility.createEdge(tmpGraph, accessEnc, matrix[w][h], matrix[w][h - 1], dist, true);
                 }
             }
             if (print) {
@@ -131,7 +136,7 @@ public abstract class AbstractRoutingAlgorithmTester {
                     float dist = 5 + Math.abs(rand.nextInt(5));
                     if (print)
                         System.out.print("-- " + (int) dist + "\t-- ");
-                    tmpGraph.edge(matrix[w][h], matrix[w - 1][h], dist, true);
+                    GHUtility.createEdge(tmpGraph, accessEnc, matrix[w][h], matrix[w - 1][h], dist, true);
                 }
                 if (print)
                     System.out.print("(" + matrix[w][h] + ")\t");
@@ -145,8 +150,14 @@ public abstract class AbstractRoutingAlgorithmTester {
 
     @Before
     public void setUp() {
-        carEncoder = (CarFlagEncoder) encodingManager.getEncoder("car");
-        footEncoder = (FootFlagEncoder) encodingManager.getEncoder("foot");
+        carEncoder = encodingManager.getEncoder("car");
+        carAccessEnc = encodingManager.getBooleanEncodedValue("car.access");
+        carAverageSpeedEnc = encodingManager.getDecimalEncodedValue("car.average_speed");
+
+        footEncoder = encodingManager.getEncoder("foot");
+        footAccessEnc = encodingManager.getBooleanEncodedValue("foot.access");
+        footAverageSpeedEnc = encodingManager.getDecimalEncodedValue("foot.average_speed");
+
         defaultOpts = AlgorithmOptions.start().
                 weighting(new ShortestWeighting(carEncoder)).build();
     }
@@ -186,7 +197,7 @@ public abstract class AbstractRoutingAlgorithmTester {
     @Test
     public void testCalcFastestPath() {
         GraphHopperStorage graphShortest = createGHStorage(false);
-        initDirectedAndDiffSpeed(graphShortest, carEncoder);
+        initDirectedAndDiffSpeed(graphShortest, carAccessEnc, carAverageSpeedEnc);
         Path p1 = createAlgo(graphShortest, defaultOpts).
                 calcPath(0, 3);
         assertEquals(Helper.createTList(0, 1, 5, 2, 3), p1.calcNodes());
@@ -196,7 +207,7 @@ public abstract class AbstractRoutingAlgorithmTester {
         AlgorithmOptions opts = AlgorithmOptions.start().
                 weighting(new FastestWeighting(carEncoder)).build();
         GraphHopperStorage graphFastest = createGHStorage(encodingManager, Arrays.asList(opts.getWeighting()), false);
-        initDirectedAndDiffSpeed(graphFastest, carEncoder);
+        initDirectedAndDiffSpeed(graphFastest, carAccessEnc, carAverageSpeedEnc);
         Path p2 = createAlgo(graphFastest, opts).
                 calcPath(0, 3);
         assertEquals(Helper.createTList(0, 4, 6, 7, 5, 3), p2.calcNodes());
@@ -209,27 +220,29 @@ public abstract class AbstractRoutingAlgorithmTester {
     // 4-5-- |
     // |/ \--7
     // 6----/
-    protected void initDirectedAndDiffSpeed(Graph graph, FlagEncoder enc) {
-        graph.edge(0, 1).setFlags(enc.setProperties(10, true, false));
-        graph.edge(0, 4).setFlags(enc.setProperties(100, true, false));
+    protected void initDirectedAndDiffSpeed(Graph graph, BooleanEncodedValue accessEnc, DecimalEncodedValue averageSpeedEnc) {
+        GHUtility.createEdge(graph, accessEnc, 0, 1, false).set(averageSpeedEnc, 10d);
+        GHUtility.createEdge(graph, accessEnc, 0, 4, false).set(averageSpeedEnc, 100d);
 
-        graph.edge(1, 4).setFlags(enc.setProperties(10, true, true));
-        graph.edge(1, 5).setFlags(enc.setProperties(10, true, true));
-        EdgeIteratorState edge12 = graph.edge(1, 2).setFlags(enc.setProperties(10, true, true));
+        GHUtility.createEdge(graph, accessEnc, 1, 4, true).set(averageSpeedEnc, 10d);
+        GHUtility.createEdge(graph, accessEnc, 1, 5, true).set(averageSpeedEnc, 10d);
+        EdgeIteratorState edge12 = GHUtility.createEdge(graph, accessEnc, 1, 2, true);
+        edge12.set(averageSpeedEnc, 10d);
 
-        graph.edge(5, 2).setFlags(enc.setProperties(10, true, false));
-        graph.edge(2, 3).setFlags(enc.setProperties(10, true, false));
+        GHUtility.createEdge(graph, accessEnc, 5, 2, false).set(averageSpeedEnc, 10d);
+        GHUtility.createEdge(graph, accessEnc, 2, 3, false).set(averageSpeedEnc, 10d);
 
-        EdgeIteratorState edge53 = graph.edge(5, 3).setFlags(enc.setProperties(20, true, false));
-        graph.edge(3, 7).setFlags(enc.setProperties(10, true, false));
+        EdgeIteratorState edge53 = GHUtility.createEdge(graph, accessEnc, 5, 3, false);
+        edge53.set(averageSpeedEnc, 20d);
+        GHUtility.createEdge(graph, accessEnc, 3, 7, false).set(averageSpeedEnc, 10d);
 
-        graph.edge(4, 6).setFlags(enc.setProperties(100, true, false));
-        graph.edge(5, 4).setFlags(enc.setProperties(10, true, false));
+        GHUtility.createEdge(graph, accessEnc, 4, 6, false).set(averageSpeedEnc, 100d);
+        GHUtility.createEdge(graph, accessEnc, 5, 4, false).set(averageSpeedEnc, 10d);
 
-        graph.edge(5, 6).setFlags(enc.setProperties(10, true, false));
-        graph.edge(7, 5).setFlags(enc.setProperties(100, true, false));
+        GHUtility.createEdge(graph, accessEnc, 5, 6, false).set(averageSpeedEnc, 10d);
+        GHUtility.createEdge(graph, accessEnc, 7, 5, false).set(averageSpeedEnc, 100d);
 
-        graph.edge(6, 7).setFlags(enc.setProperties(100, true, true));
+        GHUtility.createEdge(graph, accessEnc, 6, 7, true).set(averageSpeedEnc, 100d);
 
         updateDistancesFor(graph, 0, 0.002, 0);
         updateDistancesFor(graph, 1, 0.002, 0.001);
@@ -258,52 +271,78 @@ public abstract class AbstractRoutingAlgorithmTester {
     }
 
     protected void initFootVsCar(Graph graph) {
-        graph.edge(0, 1).setDistance(7000).setFlags(footEncoder.setProperties(5, true, true) | carEncoder.setProperties(10, true, false));
-        graph.edge(0, 4).setDistance(5000).setFlags(footEncoder.setProperties(5, true, true) | carEncoder.setProperties(20, true, false));
+        EdgeIteratorState edge1 = GHUtility.createEdge(graph, footAccessEnc, 0, 1, true).setDistance(7000);
+        GHUtility.setAccess(edge1, carAccessEnc, true, false);
+        edge1.set(footAverageSpeedEnc, 5d);
+        edge1.set(carAverageSpeedEnc, 10d);
 
-        graph.edge(1, 4).setDistance(7000).setFlags(carEncoder.setProperties(10, true, true));
-        graph.edge(1, 5).setDistance(7000).setFlags(carEncoder.setProperties(10, true, true));
-        graph.edge(1, 2).setDistance(20000).setFlags(footEncoder.setProperties(5, true, true) | carEncoder.setProperties(10, true, true));
+        edge1 = GHUtility.createEdge(graph, footAccessEnc, 0, 4, true).setDistance(5000);
+        GHUtility.setAccess(edge1, carAccessEnc, true, false);
+        edge1.set(footAverageSpeedEnc, 5d);
+        edge1.set(carAverageSpeedEnc, 20d);
 
-        graph.edge(5, 2).setDistance(5000).setFlags(carEncoder.setProperties(10, true, false));
-        graph.edge(2, 3).setDistance(5000).setFlags(footEncoder.setProperties(5, true, true) | carEncoder.setProperties(10, true, false));
+        edge1 = GHUtility.createEdge(graph, carAccessEnc, 1, 4, true).setDistance(7000);
+        edge1.set(carAverageSpeedEnc, 10d);
 
-        graph.edge(5, 3).setDistance(11000).setFlags(carEncoder.setProperties(20, true, false));
-        graph.edge(3, 7).setDistance(7000).setFlags(footEncoder.setProperties(5, true, true) | carEncoder.setProperties(10, true, false));
+        GHUtility.createEdge(graph, carAccessEnc, 1, 5, true).setDistance(7000).set(carAverageSpeedEnc, 10d);
+        GHUtility.createEdge(graph, footAccessEnc, 1, 2, true).setDistance(20000);
+        GHUtility.setAccess(edge1, carAccessEnc, true, true);
+        edge1.set(footAverageSpeedEnc, 5d);
+        edge1.set(carAverageSpeedEnc, 10d);
 
-        graph.edge(4, 6).setDistance(5000).setFlags(carEncoder.setProperties(20, true, false));
-        graph.edge(5, 4).setDistance(7000).setFlags(footEncoder.setProperties(5, true, true) | carEncoder.setProperties(10, true, false));
+        GHUtility.createEdge(graph, carAccessEnc, 5, 2, false).setDistance(5000).set(carAverageSpeedEnc, 10d);
+        edge1 = GHUtility.createEdge(graph, footAccessEnc, 2, 3, true).setDistance(5000);
+        GHUtility.setAccess(edge1, carAccessEnc, true, false);
+        edge1.set(footAverageSpeedEnc, 5d);
+        edge1.set(carAverageSpeedEnc, 10d);
 
-        graph.edge(5, 6).setDistance(7000).setFlags(carEncoder.setProperties(10, true, false));
-        graph.edge(7, 5).setDistance(5000).setFlags(footEncoder.setProperties(5, true, true) | carEncoder.setProperties(20, true, false));
+        GHUtility.createEdge(graph, carAccessEnc, 5, 3, false).setDistance(11000).set(carAverageSpeedEnc, 20d);
 
-        graph.edge(6, 7).setDistance(5000).setFlags(carEncoder.setProperties(20, true, true));
+        edge1 = GHUtility.createEdge(graph, footAccessEnc, 3, 7, true).setDistance(7000);
+        GHUtility.setAccess(edge1, carAccessEnc, true, false);
+        edge1.set(footAverageSpeedEnc, 5d);
+        edge1.set(carAverageSpeedEnc, 10d);
+
+        GHUtility.createEdge(graph, carAccessEnc, 4, 6, false).setDistance(5000).set(carAverageSpeedEnc, 20d);
+
+        edge1 = GHUtility.createEdge(graph, footAccessEnc, 5, 4, true).setDistance(7000);
+        GHUtility.setAccess(edge1, carAccessEnc, true, false);
+        edge1.set(footAverageSpeedEnc, 5d);
+        edge1.set(carAverageSpeedEnc, 10d);
+
+        GHUtility.createEdge(graph, carAccessEnc, 5, 6, false).setDistance(7000).set(carAverageSpeedEnc, 10d);
+        edge1 = GHUtility.createEdge(graph, footAccessEnc, 7, 5, true).setDistance(5000);
+        GHUtility.setAccess(edge1, carAccessEnc, true, false);
+        edge1.set(footAverageSpeedEnc, 5d);
+        edge1.set(carAverageSpeedEnc, 20d);
+
+        GHUtility.createEdge(graph, carAccessEnc, 6, 7, true).setDistance(5000).set(carAverageSpeedEnc, 20d);
     }
 
     // see test-graph.svg !
     protected GraphHopperStorage createTestStorage() {
         GraphHopperStorage graph = createGHStorage(false);
 
-        graph.edge(0, 1, 7, true);
-        graph.edge(0, 4, 6, true);
+        GHUtility.createEdge(graph, carAccessEnc, 0, 1, 7, true);
+        GHUtility.createEdge(graph, carAccessEnc, 0, 4, 6, true);
 
-        graph.edge(1, 4, 2, true);
-        graph.edge(1, 5, 8, true);
-        graph.edge(1, 2, 2, true);
+        GHUtility.createEdge(graph, carAccessEnc, 1, 4, 2, true);
+        GHUtility.createEdge(graph, carAccessEnc, 1, 5, 8, true);
+        GHUtility.createEdge(graph, carAccessEnc, 1, 2, 2, true);
 
-        graph.edge(2, 5, 5, true);
-        graph.edge(2, 3, 2, true);
+        GHUtility.createEdge(graph, carAccessEnc, 2, 5, 5, true);
+        GHUtility.createEdge(graph, carAccessEnc, 2, 3, 2, true);
 
-        graph.edge(3, 5, 2, true);
-        graph.edge(3, 7, 10, true);
+        GHUtility.createEdge(graph, carAccessEnc, 3, 5, 2, true);
+        GHUtility.createEdge(graph, carAccessEnc, 3, 7, 10, true);
 
-        graph.edge(4, 6, 4, true);
-        graph.edge(4, 5, 7, true);
+        GHUtility.createEdge(graph, carAccessEnc, 4, 6, 4, true);
+        GHUtility.createEdge(graph, carAccessEnc, 4, 5, 7, true);
 
-        graph.edge(5, 6, 2, true);
-        graph.edge(5, 7, 1, true);
+        GHUtility.createEdge(graph, carAccessEnc, 5, 6, 2, true);
+        GHUtility.createEdge(graph, carAccessEnc, 5, 7, 1, true);
 
-        EdgeIteratorState edge6_7 = graph.edge(6, 7, 5, true);
+        EdgeIteratorState edge6_7 = GHUtility.createEdge(graph, carAccessEnc, 6, 7, 5, true);
 
         updateDistancesFor(graph, 0, 0.0010, 0.00001);
         updateDistancesFor(graph, 1, 0.0008, 0.0000);
@@ -321,27 +360,27 @@ public abstract class AbstractRoutingAlgorithmTester {
     @Test
     public void testNoPathFound() {
         GraphHopperStorage graph = createGHStorage(false);
-        graph.edge(100, 101);
+        GHUtility.createEdge(graph, carAccessEnc, 100, 101, true);
         assertFalse(createAlgo(graph).calcPath(0, 1).isFound());
 
         graph = createGHStorage(false);
-        graph.edge(100, 101);
+        GHUtility.createEdge(graph, carAccessEnc, 100, 101, true);
 
         // two disconnected areas
-        graph.edge(0, 1, 7, true);
+        GHUtility.createEdge(graph, carAccessEnc, 0, 1, 7, true);
 
-        graph.edge(5, 6, 2, true);
-        graph.edge(5, 7, 1, true);
-        graph.edge(5, 8, 1, true);
-        graph.edge(7, 8, 1, true);
+        GHUtility.createEdge(graph, carAccessEnc, 5, 6, 2, true);
+        GHUtility.createEdge(graph, carAccessEnc, 5, 7, 1, true);
+        GHUtility.createEdge(graph, carAccessEnc, 5, 8, 1, true);
+        GHUtility.createEdge(graph, carAccessEnc, 7, 8, 1, true);
         RoutingAlgorithm algo = createAlgo(graph);
         assertFalse(algo.calcPath(0, 5).isFound());
         // assertEquals(3, algo.getVisitedNodes());
 
         // disconnected as directed graph
         graph = createGHStorage(false);
-        graph.edge(0, 1, 1, false);
-        graph.edge(0, 2, 1, true);
+        GHUtility.createEdge(graph, carAccessEnc, 0, 1, 1, false);
+        GHUtility.createEdge(graph, carAccessEnc, 0, 2, 1, true);
         assertFalse(createAlgo(graph).calcPath(1, 2).isFound());
     }
 
@@ -363,22 +402,22 @@ public abstract class AbstractRoutingAlgorithmTester {
     // see wikipedia-graph.svg !
     protected GraphHopperStorage createWikipediaTestGraph() {
         GraphHopperStorage graph = createGHStorage(false);
-        graph.edge(0, 1, 7, true);
-        graph.edge(0, 2, 9, true);
-        graph.edge(0, 5, 14, true);
-        graph.edge(1, 2, 10, true);
-        graph.edge(1, 3, 15, true);
-        graph.edge(2, 5, 2, true);
-        graph.edge(2, 3, 11, true);
-        graph.edge(3, 4, 6, true);
-        graph.edge(4, 5, 9, true);
+        GHUtility.createEdge(graph, carAccessEnc, 0, 1, 7, true);
+        GHUtility.createEdge(graph, carAccessEnc, 0, 2, 9, true);
+        GHUtility.createEdge(graph, carAccessEnc, 0, 5, 14, true);
+        GHUtility.createEdge(graph, carAccessEnc, 1, 2, 10, true);
+        GHUtility.createEdge(graph, carAccessEnc, 1, 3, 15, true);
+        GHUtility.createEdge(graph, carAccessEnc, 2, 5, 2, true);
+        GHUtility.createEdge(graph, carAccessEnc, 2, 3, 11, true);
+        GHUtility.createEdge(graph, carAccessEnc, 3, 4, 6, true);
+        GHUtility.createEdge(graph, carAccessEnc, 4, 5, 9, true);
         return graph;
     }
 
     @Test
     public void testBidirectional() {
         GraphHopperStorage graph = createGHStorage(false);
-        initBiGraph(graph);
+        initBiGraph(graph, carAccessEnc);
 
         // PrepareTowerNodesShortcutsTest.printEdges((CHGraph) graph);
         Path p = createAlgo(graph).calcPath(0, 4);
@@ -395,7 +434,7 @@ public abstract class AbstractRoutingAlgorithmTester {
     @Test
     public void testMaxVisitedNodes() {
         GraphHopperStorage graph = createGHStorage(false);
-        initBiGraph(graph);
+        initBiGraph(graph, carAccessEnc);
 
         RoutingAlgorithm algo = createAlgo(graph);
         Path p = algo.calcPath(0, 4);
@@ -416,16 +455,16 @@ public abstract class AbstractRoutingAlgorithmTester {
     public void testBidirectional2() {
         GraphHopperStorage graph = createGHStorage(false);
 
-        graph.edge(0, 1, 100, true);
-        graph.edge(1, 2, 1, true);
-        graph.edge(2, 3, 1, true);
-        graph.edge(3, 4, 1, true);
-        graph.edge(4, 5, 20, true);
-        graph.edge(5, 6, 10, true);
-        graph.edge(6, 7, 5, true);
-        graph.edge(7, 0, 5, true);
-        graph.edge(3, 8, 20, true);
-        graph.edge(8, 6, 20, true);
+        GHUtility.createEdge(graph, carAccessEnc, 0, 1, 100, true);
+        GHUtility.createEdge(graph, carAccessEnc, 1, 2, 1, true);
+        GHUtility.createEdge(graph, carAccessEnc, 2, 3, 1, true);
+        GHUtility.createEdge(graph, carAccessEnc, 3, 4, 1, true);
+        GHUtility.createEdge(graph, carAccessEnc, 4, 5, 20, true);
+        GHUtility.createEdge(graph, carAccessEnc, 5, 6, 10, true);
+        GHUtility.createEdge(graph, carAccessEnc, 6, 7, 5, true);
+        GHUtility.createEdge(graph, carAccessEnc, 7, 0, 5, true);
+        GHUtility.createEdge(graph, carAccessEnc, 3, 8, 20, true);
+        GHUtility.createEdge(graph, carAccessEnc, 8, 6, 20, true);
 
         Path p = createAlgo(graph).calcPath(0, 4);
         assertEquals(p.toString(), 40, p.getDistance(), 1e-4);
@@ -467,8 +506,8 @@ public abstract class AbstractRoutingAlgorithmTester {
     @Test
     public void testCannotCalculateSP() {
         GraphHopperStorage graph = createGHStorage(false);
-        graph.edge(0, 1, 1, false);
-        graph.edge(1, 2, 1, false);
+        GHUtility.createEdge(graph, carAccessEnc, 0, 1, 1, false);
+        GHUtility.createEdge(graph, carAccessEnc, 1, 2, 1, false);
 
         Path p = createAlgo(graph).calcPath(0, 2);
         assertEquals(p.toString(), 3, p.calcNodes().size());
@@ -477,12 +516,12 @@ public abstract class AbstractRoutingAlgorithmTester {
     @Test
     public void testDirectedGraphBug1() {
         GraphHopperStorage graph = createGHStorage(false);
-        graph.edge(0, 1, 3, false);
-        graph.edge(1, 2, 2.99, false);
+        GHUtility.createEdge(graph, carAccessEnc, 0, 1, 3, false);
+        GHUtility.createEdge(graph, carAccessEnc, 1, 2, 2.99, false);
 
-        graph.edge(0, 3, 2, false);
-        graph.edge(3, 4, 3, false);
-        graph.edge(4, 2, 1, false);
+        GHUtility.createEdge(graph, carAccessEnc, 0, 3, 2, false);
+        GHUtility.createEdge(graph, carAccessEnc, 3, 4, 3, false);
+        GHUtility.createEdge(graph, carAccessEnc, 4, 2, 1, false);
 
         Path p = createAlgo(graph).calcPath(0, 2);
         assertEquals(Helper.createTList(0, 1, 2), p.calcNodes());
@@ -493,11 +532,11 @@ public abstract class AbstractRoutingAlgorithmTester {
     @Test
     public void testDirectedGraphBug2() {
         GraphHopperStorage graph = createGHStorage(false);
-        graph.edge(0, 1, 1, false);
-        graph.edge(1, 2, 1, false);
-        graph.edge(2, 3, 1, false);
+        GHUtility.createEdge(graph, carAccessEnc, 0, 1, 1, false);
+        GHUtility.createEdge(graph, carAccessEnc, 1, 2, 1, false);
+        GHUtility.createEdge(graph, carAccessEnc, 2, 3, 1, false);
 
-        graph.edge(3, 1, 4, true);
+        GHUtility.createEdge(graph, carAccessEnc, 3, 1, 4, true);
 
         Path p = createAlgo(graph).calcPath(0, 3);
         assertEquals(Helper.createTList(0, 1, 2, 3), p.calcNodes());
@@ -512,16 +551,16 @@ public abstract class AbstractRoutingAlgorithmTester {
         Weighting weighting = new ShortestWeighting(carEncoder);
         GraphHopperStorage graph = createGHStorage(encodingManager, Arrays.asList(weighting), false);
 
-        graph.edge(0, 1, 2, true).setWayGeometry(Helper.createPointList(1.5, 1));
-        graph.edge(2, 3, 2, true).setWayGeometry(Helper.createPointList(0, 1.5));
-        graph.edge(3, 4, 2, true).setWayGeometry(Helper.createPointList(0, 2));
+        GHUtility.createEdge(graph, carAccessEnc, 0, 1, 2, true).setWayGeometry(Helper.createPointList(1.5, 1));
+        GHUtility.createEdge(graph, carAccessEnc, 2, 3, 2, true).setWayGeometry(Helper.createPointList(0, 1.5));
+        GHUtility.createEdge(graph, carAccessEnc, 3, 4, 2, true).setWayGeometry(Helper.createPointList(0, 2));
 
         // duplicate but the second edge is longer
-        graph.edge(0, 2, 1.2, true);
-        graph.edge(0, 2, 1.5, true).setWayGeometry(Helper.createPointList(0.5, 0));
+        GHUtility.createEdge(graph, carAccessEnc, 0, 2, 1.2, true);
+        GHUtility.createEdge(graph, carAccessEnc, 0, 2, 1.5, true).setWayGeometry(Helper.createPointList(0.5, 0));
 
-        graph.edge(1, 3, 1.3, true).setWayGeometry(Helper.createPointList(0.5, 1.5));
-        graph.edge(1, 4, 1, true);
+        GHUtility.createEdge(graph, carAccessEnc, 1, 3, 1.3, true).setWayGeometry(Helper.createPointList(0.5, 1.5));
+        GHUtility.createEdge(graph, carAccessEnc, 1, 4, 1, true);
 
         updateDistancesFor(graph, 0, 1, 0.6);
         updateDistancesFor(graph, 1, 1, 1.5);
@@ -575,7 +614,7 @@ public abstract class AbstractRoutingAlgorithmTester {
     @Test
     public void testViaEdges_BiGraph() {
         GraphHopperStorage graph = createGHStorage(false);
-        initBiGraph(graph);
+        initBiGraph(graph, carAccessEnc);
 
         // 0-7 to 4-3
         Path p = calcPathViaQuery(graph, 0.0009, 0, 0.001, 0.001105);
@@ -602,11 +641,11 @@ public abstract class AbstractRoutingAlgorithmTester {
         // 0->1\
         // |    2
         // 4<-3/
-        graph.edge(0, 1, 7, false);
-        graph.edge(1, 2, 7, true);
-        graph.edge(2, 3, 7, true);
-        graph.edge(3, 4, 7, false);
-        graph.edge(4, 0, 7, true);
+        GHUtility.createEdge(graph, carAccessEnc, 0, 1, 7, false);
+        GHUtility.createEdge(graph, carAccessEnc, 1, 2, 7, true);
+        GHUtility.createEdge(graph, carAccessEnc, 2, 3, 7, true);
+        GHUtility.createEdge(graph, carAccessEnc, 3, 4, 7, false);
+        GHUtility.createEdge(graph, carAccessEnc, 4, 0, 7, true);
 
         updateDistancesFor(graph, 4, 0, 0);
         updateDistancesFor(graph, 0, 0.00010, 0);
@@ -634,7 +673,7 @@ public abstract class AbstractRoutingAlgorithmTester {
     public void testQueryGraphAndFastest() {
         Weighting weighting = new FastestWeighting(carEncoder);
         GraphHopperStorage graph = createGHStorage(encodingManager, Arrays.asList(weighting), false);
-        initDirectedAndDiffSpeed(graph, carEncoder);
+        initDirectedAndDiffSpeed(graph, carAccessEnc, carAverageSpeedEnc);
         Path p = calcPathViaQuery(weighting, graph, 0.002, 0.0005, 0.0017, 0.0031);
         assertEquals(Helper.createTList(8, 1, 5, 3, 9), p.calcNodes());
         assertEquals(602.98, p.getDistance(), 1e-1);
@@ -698,9 +737,13 @@ public abstract class AbstractRoutingAlgorithmTester {
         AlgorithmOptions opts = AlgorithmOptions.start().
                 weighting(new FastestWeighting(encoder)).build();
         GraphHopperStorage graph = createGHStorage(em, Arrays.asList(opts.getWeighting()), true);
-        initEleGraph(graph);
+        initEleGraph(graph, carAccessEnc);
         // force the other path
-        GHUtility.getEdge(graph, 0, 3).setFlags(encoder.setProperties(10, false, true));
+        EdgeIteratorState edge = GHUtility.getEdge(graph, 0, 3);
+        BooleanEncodedValue bikeAccessEnc = em.getBooleanEncodedValue("bike.access");
+        edge.set(bikeAccessEnc, false);
+        edge.setReverse(bikeAccessEnc, true);
+        edge.set(em.getDecimalEncodedValue("bike.average_speed"), 10d);
 
         // for two weights per edge it happened that Path (and also the Weighting) read the wrong side
         // of the speed and read 0 => infinity weight => overflow of millis => negative millis!
@@ -714,10 +757,13 @@ public abstract class AbstractRoutingAlgorithmTester {
     @Test
     public void test0SpeedButUnblocked_Issue242() {
         GraphHopperStorage graph = createGHStorage(false);
-        long flags = carEncoder.setAccess(carEncoder.setSpeed(0, 0), true, true);
+        IntsRef ints = encodingManager.createIntsRef();
+        carAccessEnc.setBool(false, ints, true);
+        carAccessEnc.setBool(true, ints, true);
+        carAverageSpeedEnc.setDecimal(false, ints, 0);
 
-        graph.edge(0, 1).setFlags(flags).setDistance(10);
-        graph.edge(1, 2).setFlags(flags).setDistance(10);
+        graph.edge(0, 1).setDistance(10).setData(ints);
+        graph.edge(1, 2).setDistance(10).setData(ints);
 
         RoutingAlgorithm algo = createAlgo(graph);
         try {
@@ -772,7 +818,7 @@ public abstract class AbstractRoutingAlgorithmTester {
 
             @Override
             public EdgeFilter createEdgeFilter(boolean forward, boolean reverse) {
-                return new DefaultEdgeFilter(getFlagEncoder(), reverse, forward);
+                return new DefaultEdgeFilter(carAccessEnc, forward, reverse);
             }
 
             @Override
@@ -788,14 +834,14 @@ public abstract class AbstractRoutingAlgorithmTester {
 
         AlgorithmOptions opts = AlgorithmOptions.start().weighting(defaultOpts.getWeighting()).build();
         GraphHopperStorage graph = createGHStorage(encodingManager, Arrays.asList(opts.getWeighting()), true);
-        initEleGraph(graph);
+        initEleGraph(graph, carAccessEnc);
         Path p = createAlgo(graph, opts).calcPath(0, 10);
         // GHUtility.printEdgeInfo(graph, carEncoder);
         assertEquals(Helper.createTList(0, 4, 6, 10), p.calcNodes());
 
         AlgorithmOptions fakeOpts = AlgorithmOptions.start().weighting(fakeWeighting).build();
         graph = createGHStorage(encodingManager, Arrays.asList(fakeOpts.getWeighting()), true);
-        initEleGraph(graph);
+        initEleGraph(graph, carAccessEnc);
         QueryResult from = newQR(graph, 3, 0);
         QueryResult to = newQR(graph, 10, 9);
 
@@ -823,10 +869,10 @@ public abstract class AbstractRoutingAlgorithmTester {
         initFootVsCar(ghStorage);
 
         // normal path would be 0-4-6-7 but block 4-6
-        GHUtility.getEdge(ghStorage, 4, 6).setFlags(carEncoder.setProperties(20, false, false));
-
-        RoutingAlgorithm algoFoot = createFactory(ghStorage, footOptions).
-                createAlgo(getGraph(ghStorage, footWeighting), footOptions);
+        EdgeIteratorState edge = GHUtility.getEdge(ghStorage, 4, 6);
+        edge.set(carAverageSpeedEnc, 20d);
+        edge.set(carAccessEnc, false);
+        edge.setReverse(carAccessEnc, false);
 
         RoutingAlgorithm algoCar = createFactory(ghStorage, carOptions).
                 createAlgo(getGraph(ghStorage, carWeighting), carOptions);
@@ -842,26 +888,26 @@ public abstract class AbstractRoutingAlgorithmTester {
     // 5-6-7
     // | |\|
     // 8-9-10
-    Graph initEleGraph(Graph g) {
-        g.edge(0, 1, 10, true);
-        g.edge(0, 4, 12, true);
-        g.edge(0, 3, 5, true);
-        g.edge(1, 2, 10, true);
-        g.edge(1, 4, 5, true);
-        g.edge(3, 5, 5, false);
-        g.edge(5, 6, 10, true);
-        g.edge(5, 8, 10, true);
-        g.edge(6, 4, 5, true);
-        g.edge(6, 7, 10, true);
-        g.edge(6, 10, 12, true);
-        g.edge(6, 9, 12, true);
-        g.edge(2, 11, 5, false);
-        g.edge(4, 11, 10, true);
-        g.edge(7, 11, 5, true);
-        g.edge(7, 10, 5, true);
-        g.edge(8, 9, 10, false);
-        g.edge(9, 8, 9, false);
-        g.edge(10, 9, 10, false);
+    Graph initEleGraph(Graph g, BooleanEncodedValue accessEnc) {
+        GHUtility.createEdge(g, accessEnc, 0, 1, 10, true);
+        GHUtility.createEdge(g, accessEnc, 0, 4, 12, true);
+        GHUtility.createEdge(g, accessEnc,0, 3, 5, true);
+        GHUtility.createEdge(g, accessEnc,1, 2, 10, true);
+        GHUtility.createEdge(g, accessEnc,1, 4, 5, true);
+        GHUtility.createEdge(g, accessEnc,3, 5, 5, false);
+        GHUtility.createEdge(g, accessEnc,5, 6, 10, true);
+        GHUtility.createEdge(g, accessEnc,5, 8, 10, true);
+        GHUtility.createEdge(g, accessEnc,6, 4, 5, true);
+        GHUtility.createEdge(g, accessEnc,6, 7, 10, true);
+        GHUtility.createEdge(g, accessEnc,6, 10, 12, true);
+        GHUtility.createEdge(g, accessEnc,6, 9, 12, true);
+        GHUtility.createEdge(g, accessEnc,2, 11, 5, false);
+        GHUtility.createEdge(g, accessEnc,4, 11, 10, true);
+        GHUtility.createEdge(g, accessEnc,7, 11, 5, true);
+        GHUtility.createEdge(g, accessEnc,7, 10, 5, true);
+        GHUtility.createEdge(g, accessEnc,8, 9, 10, false);
+        GHUtility.createEdge(g, accessEnc,9, 8, 9, false);
+        GHUtility.createEdge(g, accessEnc,10, 9, 10, false);
         updateDistancesFor(g, 0, 3, 0);
         updateDistancesFor(g, 3, 2.5, 0);
         updateDistancesFor(g, 5, 1, 0);
@@ -878,6 +924,6 @@ public abstract class AbstractRoutingAlgorithmTester {
     }
 
     protected GraphHopperStorage createMatrixGraph() {
-        return createMatrixAlikeGraph(createGHStorage(false));
+        return createMatrixAlikeGraph(createGHStorage(false), carAccessEnc);
     }
 }

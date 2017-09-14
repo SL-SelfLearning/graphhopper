@@ -17,7 +17,9 @@
  */
 package com.graphhopper.reader;
 
+import com.graphhopper.routing.profiles.BooleanEncodedValue;
 import com.graphhopper.storage.Graph;
+import com.graphhopper.util.GHUtility;
 import com.graphhopper.util.Helper;
 
 import java.io.BufferedReader;
@@ -31,11 +33,13 @@ import java.io.InputStreamReader;
  * @author Peter Karich
  */
 public class PrinctonReader {
-    private Graph g;
+    private final Graph g;
+    private final BooleanEncodedValue accessEnc;
     private InputStream is;
 
-    public PrinctonReader(Graph graph) {
+    public PrinctonReader(Graph graph, BooleanEncodedValue accessEnc) {
         g = graph;
+        this.accessEnc = accessEnc;
     }
 
     public PrinctonReader setStream(InputStream is) {
@@ -81,7 +85,7 @@ public class PrinctonReader {
                     throw new RuntimeException("incorrect read!? from:" + from + ", to:" + to + ", dist:" + dist);
                 }
 
-                g.edge(from, to, dist, false);
+                GHUtility.createEdge(g, accessEnc, from, to, dist, false);
             }
         } catch (Exception ex) {
             throw new RuntimeException("Problem in line " + lineNo, ex);

@@ -3,16 +3,17 @@ package com.graphhopper.storage;
 import com.graphhopper.GraphHopper;
 import com.graphhopper.reader.ReaderWay;
 import com.graphhopper.routing.AbstractRoutingAlgorithmTester;
+import com.graphhopper.routing.profiles.BooleanEncodedValue;
 import com.graphhopper.routing.util.DataFlagEncoder;
 import com.graphhopper.routing.util.EncodingManager;
 import com.graphhopper.routing.util.FlagEncoder;
+import com.graphhopper.util.GHUtility;
 import com.graphhopper.util.Helper;
 import com.graphhopper.util.PMap;
 import org.junit.After;
 import org.junit.Before;
 import org.junit.Test;
 
-import java.io.Closeable;
 import java.io.File;
 import java.util.Arrays;
 
@@ -30,6 +31,7 @@ public class GraphHopperStorageForDataFlagEncoderTest {
     private final PMap properties;
     private final DataFlagEncoder encoder;
     private final EncodingManager encodingManager;
+    private final BooleanEncodedValue accessEnc;
 
     public GraphHopperStorageForDataFlagEncoderTest() {
         properties = new PMap();
@@ -38,6 +40,7 @@ public class GraphHopperStorageForDataFlagEncoderTest {
         properties.put("store_width", false);
         encoder = new DataFlagEncoder(properties);
         encodingManager = new EncodingManager.Builder().addAll(Arrays.asList(encoder), 8).build();
+        accessEnc = encodingManager.getBooleanEncodedValue("generic.access");
     }
 
     @Before
@@ -47,7 +50,7 @@ public class GraphHopperStorageForDataFlagEncoderTest {
 
     @After
     public void tearDown() {
-        Helper.close((Closeable) graph);
+        Helper.close(graph);
         Helper.removeDir(new File(locationParent));
     }
 
@@ -60,27 +63,27 @@ public class GraphHopperStorageForDataFlagEncoderTest {
         way_0_1.setTag("highway", "primary");
         way_0_1.setTag("maxheight", "4.4");
 
-        graph.edge(0, 1, 1, true);
+        GHUtility.createEdge(graph, accessEnc, 0, 1, 1, true);
         AbstractRoutingAlgorithmTester.updateDistancesFor(graph, 0, 0.00, 0.00);
         AbstractRoutingAlgorithmTester.updateDistancesFor(graph, 1, 0.01, 0.01);
-        graph.getEdgeIteratorState(0, 1).setFlags(encoder.handleWayTags(way_0_1, 1, 0));
+        graph.getEdgeIteratorState(0, 1).setData(encoder.handleWayTags(encodingManager.createIntsRef(), way_0_1, EncodingManager.Access.WAY, 0));
 
         // 1-2
         ReaderWay way_1_2 = new ReaderWay(28l);
         way_1_2.setTag("highway", "primary");
         way_1_2.setTag("maxweight", "45");
 
-        graph.edge(1, 2, 1, true);
+        GHUtility.createEdge(graph, accessEnc, 1, 2, 1, true);
         AbstractRoutingAlgorithmTester.updateDistancesFor(graph, 2, 0.02, 0.02);
-        graph.getEdgeIteratorState(1, 2).setFlags(encoder.handleWayTags(way_1_2, 1, 0));
+        graph.getEdgeIteratorState(1, 2).setData(encoder.handleWayTags(encodingManager.createIntsRef(), way_1_2, EncodingManager.Access.WAY, 0));
 
         // 2-0
         ReaderWay way_2_0 = new ReaderWay(29l);
         way_2_0.setTag("highway", "primary");
         way_2_0.setTag("maxwidth", "5");
 
-        graph.edge(2, 0, 1, true);
-        graph.getEdgeIteratorState(2, 0).setFlags(encoder.handleWayTags(way_2_0, 1, 0));
+        GHUtility.createEdge(graph, accessEnc, 2, 0, 1, true);
+        graph.getEdgeIteratorState(2, 0).setData(encoder.handleWayTags(encodingManager.createIntsRef(), way_2_0, EncodingManager.Access.WAY, 0));
 
         graph.flush();
         graph.close();
@@ -93,7 +96,7 @@ public class GraphHopperStorageForDataFlagEncoderTest {
         FlagEncoder flagEncoder = em.fetchEdgeEncoders().get(0);
         assertTrue(flagEncoder instanceof DataFlagEncoder);
 
-        DataFlagEncoder dataFlagEncoder = (DataFlagEncoder)flagEncoder;
+        DataFlagEncoder dataFlagEncoder = (DataFlagEncoder) flagEncoder;
         assertTrue(dataFlagEncoder.isStoreHeight());
         assertTrue(dataFlagEncoder.isStoreWeight());
         assertFalse(dataFlagEncoder.isStoreWidth());

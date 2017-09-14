@@ -42,7 +42,11 @@ public final class StringEncodedValue extends IntEncodedValue {
             throw new IllegalArgumentException("default value " + defaultValue + " not found");
     }
 
-    private int getIndex(String value) {
+    public final int getMapSize() {
+        return map.length;
+    }
+
+    public final int indexOf(String value) {
         if (value == null)
             return defaultValue;
         int res = Arrays.binarySearch(map, value);
@@ -52,7 +56,7 @@ public final class StringEncodedValue extends IntEncodedValue {
     }
 
     public final void setString(boolean reverse, IntsRef ref, String value) {
-        int intValue = getIndex(value);
+        int intValue = indexOf(value);
         super.setInt(reverse, ref, intValue);
     }
 

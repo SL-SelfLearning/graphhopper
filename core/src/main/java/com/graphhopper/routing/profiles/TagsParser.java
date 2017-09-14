@@ -18,11 +18,11 @@
 package com.graphhopper.routing.profiles;
 
 import com.graphhopper.reader.ReaderWay;
-import com.graphhopper.util.EdgeIteratorState;
+import com.graphhopper.storage.IntsRef;
 
 import java.util.Collection;
 
 public interface TagsParser {
 
-    void parse(ReaderWay way, EdgeIteratorState edgeState, Collection<TagParser> parsers);
+    void parse(Collection<TagParser> parsers, IntsRef ints, ReaderWay way);
 }

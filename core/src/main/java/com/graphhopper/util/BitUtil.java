@@ -17,6 +17,8 @@
  */
 package com.graphhopper.util;
 
+import com.graphhopper.storage.IntsRef;
+
 import java.nio.ByteOrder;
 
 /**
@@ -167,6 +169,14 @@ public abstract class BitUtil {
 
     public abstract byte[] fromBitString(String str);
 
+    public final String toBitString(IntsRef ints) {
+        StringBuilder sb = new StringBuilder();
+        for (int i = 0; i < ints.length; i++) {
+            sb.append(toBitString(ints.ints[i], 32));
+        }
+        return sb.toString();
+    }
+
     /**
      * Similar to Long.toBinaryString
      */
@@ -190,7 +200,6 @@ public abstract class BitUtil {
 
     /**
      * Higher order bits comes first in the returned string.
-     * <p>
      *
      * @param bits how many bits should be returned.
      */

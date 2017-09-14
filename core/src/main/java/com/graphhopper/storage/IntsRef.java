@@ -43,9 +43,10 @@ public final class IntsRef implements Comparable<IntsRef>, Cloneable {
      * Length of used ints.
      */
     public final int length;
+    private boolean empty;
 
     /**
-     * Create a IntsRef pointing to a new array of size <code>capacity</code>.
+     * Create a IntsRef pointing to a new int array of size <code>capacity</code> leading to capacity*32 bits.
      * Offset will be zero and length will be the capacity.
      */
     public IntsRef(int capacity) {
@@ -202,5 +203,13 @@ public final class IntsRef implements Comparable<IntsRef>, Cloneable {
         }
         sb.append(']');
         return sb.toString();
+    }
+
+    public boolean isEmpty() {
+        for (int i = 0; i < ints.length; i++) {
+            if (ints[i] != 0)
+                return false;
+        }
+        return true;
     }
 }

@@ -37,7 +37,7 @@ public class HikeFlagEncoderTest {
         way.setTag("access", "no");
         way.setTag("sidewalk", "both");
         way.setTag("foot", "no");
-        assertFalse(hikeEncoder.acceptWay(way) > 0);
+        assertFalse(hikeEncoder.getAccess(way).isWay());
     }
 
     @Test

@@ -35,21 +35,23 @@ public class DecimalEncodedValue extends IntEncodedValue {
     /**
      * TODO This method is important to 'spread' an encoded value when a way is split due to e.g. a virtual node
      */
-    public final boolean isLengthDependent() {
-        return false;
-    }
-
+    // public final boolean isLengthDependent() { return false; }
     private int toInt(double val) {
         return (int) Math.round(val / factor);
     }
 
-    public final void setDecimal(boolean reverse, IntsRef ref, double value) {
+    /**
+     * This method stores the specified double value (rounding with a previously defined factor) into the IntsRef.
+     */
+    public final void setDecimal(boolean reverse, IntsRef ints, double value) {
         if (value > maxValue * factor)
-            throw new IllegalArgumentException(getName() + " value too large for encoding: " + value + ", maxValue:" + maxValue * factor);
+            throw new IllegalArgumentException(getName() + " value " + value + " too large for encoding. maxValue:" + maxValue * factor);
         if (value < 0)
-            throw new IllegalArgumentException("negative value for " + getName() + " not allowed! " + value);
+            throw new IllegalArgumentException("Negative value for " + getName() + " not allowed! " + value);
+        if (Double.isNaN(value))
+            throw new IllegalArgumentException("NaN value for " + getName() + " not allowed!");
 
-        super.setInt(reverse, ref, toInt(value));
+        super.setInt(reverse, ints, toInt(value));
     }
 
     public final double getDecimal(boolean reverse, IntsRef ref) {

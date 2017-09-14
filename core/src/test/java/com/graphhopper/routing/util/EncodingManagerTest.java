@@ -19,11 +19,16 @@ package com.graphhopper.routing.util;
 
 import com.graphhopper.reader.ReaderRelation;
 import com.graphhopper.reader.ReaderWay;
-import com.graphhopper.routing.weighting.PriorityWeighting;
+import com.graphhopper.routing.profiles.DecimalEncodedValue;
+import com.graphhopper.routing.profiles.TagParser;
+import com.graphhopper.storage.IntsRef;
 import com.graphhopper.util.BitUtil;
 import org.junit.Rule;
 import org.junit.Test;
 import org.junit.rules.ExpectedException;
+
+import java.util.HashMap;
+import java.util.Map;
 
 import static org.junit.Assert.*;
 
@@ -112,18 +117,23 @@ public class EncodingManagerTest {
             }
 
             @Override
+            public Map<String, TagParser> createTagParsers(String prefix) {
+                return new HashMap<>();
+            }
+
+            @Override
             public long handleRelationTags(ReaderRelation relation, long oldRelationFlags) {
                 return 0;
             }
 
             @Override
-            public long acceptWay(ReaderWay way) {
-                return 0;
+            public EncodingManager.Access getAccess(ReaderWay way) {
+                return EncodingManager.Access.WAY;
             }
 
             @Override
-            public long handleWayTags(ReaderWay way, long allowed, long relationFlags) {
-                return 0;
+            public IntsRef handleWayTags(IntsRef ints, ReaderWay way, EncodingManager.Access allowed, long relationFlags) {
+                return ints;
             }
         };
 
@@ -138,8 +148,8 @@ public class EncodingManagerTest {
         osmWay.setTag("highway", "track");
         ReaderRelation osmRel = new ReaderRelation(1);
 
-        BikeFlagEncoder defaultBike = new BikeFlagEncoder();
-        BikeFlagEncoder lessRelationCodes = new BikeFlagEncoder() {
+        BikeFlagEncoder defaultBikeEncoder = new BikeFlagEncoder();
+        BikeFlagEncoder lessRelationCodesEncoder = new BikeFlagEncoder() {
             @Override
             public int defineRelationBits(int index, int shift) {
                 relationCodeEncoder = new EncodedValue08("RelationCode2", shift, 2, 1, 0, 3);
@@ -163,17 +173,17 @@ public class EncodingManagerTest {
                 return "less_relations_bits";
             }
         };
-        EncodingManager manager = new EncodingManager.Builder().addAll(defaultBike, lessRelationCodes).build();
+        EncodingManager manager = new EncodingManager.Builder().addAll(defaultBikeEncoder, lessRelationCodesEncoder).build();
 
         // relation code is PREFER
         osmRel.setTag("route", "bicycle");
         osmRel.setTag("network", "lcn");
         long relFlags = manager.handleRelationTags(osmRel, 0);
-        long allow = defaultBike.acceptBit | lessRelationCodes.acceptBit;
-        long flags = manager.handleWayTags(osmWay, allow, relFlags);
+        IntsRef flags = manager.handleWayTags(manager.createIntsRef(), osmWay, new EncodingManager.AcceptWay(), relFlags);
 
-        assertTrue(defaultBike.getDouble(flags, PriorityWeighting.KEY)
-                > lessRelationCodes.getDouble(flags, PriorityWeighting.KEY));
+        DecimalEncodedValue bikePrioEnc = manager.getDecimalEncodedValue(defaultBikeEncoder.getPrefix() + "priority");
+        DecimalEncodedValue lessBikePrioEnc = manager.getDecimalEncodedValue(lessRelationCodesEncoder.getPrefix() + "priority");
+        assertTrue(bikePrioEnc.getDecimal(false, flags) > lessBikePrioEnc.getDecimal(false, flags));
     }
 
     @Test
@@ -192,15 +202,16 @@ public class EncodingManagerTest {
         osmRel.setTag("route", "bicycle");
         osmRel.setTag("network", "rcn");
         long relFlags = manager.handleRelationTags(osmRel, 0);
-        long allow = bikeEncoder.acceptBit | mtbEncoder.acceptBit;
-        long flags = manager.handleWayTags(osmWay, allow, relFlags);
+        IntsRef flags = manager.handleWayTags(manager.createIntsRef(), osmWay, new EncodingManager.AcceptWay(), relFlags);
 
-        // bike: uninfluenced speed for grade but via network => VERY_NICE                
+        DecimalEncodedValue bikePrioEnc = manager.getDecimalEncodedValue(bikeEncoder.getPrefix() + "priority");
+        DecimalEncodedValue mtbPrioEnc = manager.getDecimalEncodedValue(mtbEncoder.getPrefix() + "priority");
+        // bike: uninfluenced speed for grade but via network => VERY_NICE
         // mtb: uninfluenced speed only PREFER
-        assertTrue(bikeEncoder.getDouble(flags, PriorityWeighting.KEY)
-                > mtbEncoder.getDouble(flags, PriorityWeighting.KEY));
+        assertTrue(bikePrioEnc.getDecimal(false, flags) > mtbPrioEnc.getDecimal(false, flags));
     }
 
+    @Test
     public void testFullBitMask() {
         BitUtil bitUtil = BitUtil.LITTLE;
         EncodingManager manager = new EncodingManager.Builder().addAllFlagEncoders("car,foot").build();
@@ -225,7 +236,7 @@ public class EncodingManagerTest {
         osmWay.setTag("name", "test");
 
         BikeFlagEncoder singleBikeEnc = (BikeFlagEncoder) manager2.getEncoder("bike2");
-        long flags = manager2.handleWayTags(osmWay, singleBikeEnc.acceptBit, 0);
+        IntsRef flags = manager2.handleWayTags(manager2.createIntsRef(), osmWay, new EncodingManager.AcceptWay(), 0);
         double singleSpeed = singleBikeEnc.getSpeed(flags);
         assertEquals(4, singleSpeed, 1e-3);
         assertEquals(singleSpeed, singleBikeEnc.getReverseSpeed(flags), 1e-3);
@@ -234,8 +245,7 @@ public class EncodingManagerTest {
         FootFlagEncoder foot = (FootFlagEncoder) manager.getEncoder("foot");
         BikeFlagEncoder bike = (BikeFlagEncoder) manager.getEncoder("bike2");
 
-        long acceptBits = foot.acceptBit | bike.acceptBit;
-        flags = manager.handleWayTags(osmWay, acceptBits, 0);
+        flags = manager.handleWayTags(manager.createIntsRef(), osmWay, new EncodingManager.AcceptWay(), 0);
         assertEquals(singleSpeed, bike.getSpeed(flags), 1e-2);
         assertEquals(singleSpeed, bike.getReverseSpeed(flags), 1e-2);
 

@@ -23,6 +23,7 @@ import com.graphhopper.reader.ReaderWay;
 import com.graphhopper.routing.profiles.*;
 import com.graphhopper.routing.weighting.TurnWeighting;
 import com.graphhopper.storage.Directory;
+import com.graphhopper.storage.IntsRef;
 import com.graphhopper.storage.RAMDirectory;
 import com.graphhopper.storage.StorableProperties;
 import com.graphhopper.util.EdgeIteratorState;
@@ -37,7 +38,7 @@ import java.util.*;
  * @author Peter Karich
  * @author Nop
  */
-public class EncodingManager {
+public class EncodingManager implements EncodedValueLookup {
 
     private final Map<String, TagParser> parsers = new HashMap<>();
     private final Collection<ReaderWayFilter> filters = new HashSet<>();
@@ -64,62 +65,86 @@ public class EncodingManager {
      */
     private EncodingManager(TagsParser parser, int extendedDataSize) {
         this.parser = parser;
-        this.extendedDataSize = Math.min(1, extendedDataSize / 4) * 4;
+        this.extendedDataSize = Math.max(1, extendedDataSize / 4) * 4;
+    }
+
+    public IntsRef createIntsRef() {
+        return new IntsRef(extendedDataSize / 4);
     }
 
     public static class Builder {
         private boolean buildCalled;
         private final EncodingManager em;
-        private int nextWayBit = 0;
         private int nextNodeBit = 0;
         private int nextRelBit = 0;
         private int nextTurnBit = 0;
 
-        @Deprecated
+        /**
+         * used only for tests, could be removed in 0.11
+         */
         public Builder() {
             this(new TagsParser() {
                 @Override
-                public void parse(ReaderWay way, EdgeIteratorState edgeState, Collection<TagParser> parsers) {
+                public void parse(Collection<TagParser> parsers, IntsRef ints, ReaderWay way) {
                 }
-            }, 0);
+            }, 8);
         }
 
         public Builder(TagsParser parser, int extendedDataSize) {
             this.em = new EncodingManager(parser, extendedDataSize);
         }
 
+        /**
+         * This method adds some EncodedValues that a few FlagEncoders require like roundabout and road_class
+         */
+        public Builder addGlobalEncodedValues() {
+            add(TagParserFactory.createRoundabout(new BooleanEncodedValue(TagParserFactory.ROUNDABOUT, false)));
+            List<String> roadClasses = Arrays.asList("_default", "footway", "path", "steps", "pedestrian", "living_street", "track",
+                    "residential", "service", "trunk", "trunk_link", "motorway", "motorway_link", "motorroad",
+                    "primary", "primary_link", "secondary", "secondary_link", "tertiary", "tertiary_link",
+                    "cycleway", "unclassified", "road", "bridleway");
+            add(TagParserFactory.createRoadClass(new StringEncodedValue(TagParserFactory.ROAD_CLASS, roadClasses, "_default")));
+
+            List<String> roadEnvList = Arrays.asList("_default", "bridge", "tunnel", "ford", "aerialway");
+            add(TagParserFactory.createRoadEnvironment(new StringEncodedValue(TagParserFactory.ROAD_ENVIRONMENT, roadEnvList, "_default"), roadEnvList));
+            return this;
+        }
+
         public Builder add(TagParser parser) {
             check();
             TagParser old = em.parsers.get(parser.getName());
             if (old != null)
-                throw new IllegalArgumentException("Already existing parser " + parser.getName() + ": " + old);
+                throw new IllegalArgumentException("Cannot add parser " + old.getName() + ". Already existing: " + parser.getName());
 
+            // TODO NOW: throw exception if byte limit exceeded! similar to WAY_ERR
             em.parsers.put(parser.getName(), parser);
             em.filters.add(parser.getReadWayFilter());
             return this;
         }
 
-        @Deprecated
         public Builder addAllFlagEncoders(String encoderList) {
             addAll(FlagEncoderFactory.DEFAULT, encoderList, 4);
             return this;
         }
 
         /**
-         * @deprecated use TagParser instead of FlagEncoder
+         * Use TagParsers instead of FlagEncoder
          */
         public Builder addAll(FlagEncoderFactory factory, String encoderList, int bytesForFlags) {
             addAll(parseEncoderString(factory, encoderList), bytesForFlags);
             return this;
         }
 
+        /**
+         * Use TagParsers instead of FlagEncoder
+         */
         public Builder addAll(FlagEncoder... encoders) {
             addAll(Arrays.asList(encoders), 4);
             return this;
         }
 
         /**
-         * @deprecated use TagParser instead of FlagEncoder
+         * Use TagParsers instead of FlagEncoder
          */
         public Builder addAll(List<? extends FlagEncoder> list, int bytesForFlags) {
             em.bitsForEdgeFlags = bytesForFlags * 8;
@@ -133,42 +158,25 @@ public class EncodingManager {
             check();
 
             AbstractFlagEncoder encoder = (AbstractFlagEncoder) flagEncoder;
-            if (encoder.isRegistered())
-                throw new IllegalStateException("You must not register a FlagEncoder (" + encoder.toString() + ") twice!");
-
             for (FlagEncoder fe : em.edgeEncoders) {
                 if (fe.toString().equals(encoder.toString()))
                     throw new IllegalArgumentException("Cannot register edge encoder. Name already exists: " + fe.toString());
             }
-
-            encoder.setRegistered(true);
-
-            int encoderCount = em.edgeEncoders.size();
-            int usedBits = encoder.defineNodeBits(encoderCount, nextNodeBit);
-            if (usedBits > em.bitsForEdgeFlags)
-                throw new IllegalArgumentException(String.format(ERR, usedBits, em.bitsForEdgeFlags, "node"));
-            encoder.setNodeBitMask(usedBits - nextNodeBit, nextNodeBit);
-            nextNodeBit = usedBits;
-
-            usedBits = encoder.defineWayBits(encoderCount, nextWayBit);
-            if (usedBits > em.bitsForEdgeFlags)
-                throw new IllegalArgumentException(String.format(ERR, usedBits, em.bitsForEdgeFlags, "way") + WAY_ERR);
-            encoder.setWayBitMask(usedBits - nextWayBit, nextWayBit);
-            nextWayBit = usedBits;
-
-            usedBits = encoder.defineRelationBits(encoderCount, nextRelBit);
-            if (usedBits > em.bitsForEdgeFlags)
-                throw new IllegalArgumentException(String.format(ERR, usedBits, em.bitsForEdgeFlags, "relation"));
-            encoder.setRelBitMask(usedBits - nextRelBit, nextRelBit);
-            nextRelBit = usedBits;
-
-            // turn flag bits are independent from edge encoder bits
-            usedBits = encoder.defineTurnBits(encoderCount, nextTurnBit);
-            if (usedBits > em.bitsForTurnFlags)
-                throw new IllegalArgumentException(String.format(ERR, usedBits, em.bitsForTurnFlags, "turn"));
-            nextTurnBit = usedBits;
-
+            if (encoder.isRegistered())
+                throw new IllegalStateException("You must not register the FlagEncoder '" + encoder.toString() + "' twice!");
+            encoder.setEncodedValueLookup(em);
             em.edgeEncoders.add(encoder);
+
+            for (Map.Entry<String, TagParser> entry : encoder.createTagParsers(getPrefix(encoder)).entrySet()) {
+                if (entry.getValue() == null) {
+                    if (!em.parsers.containsKey(entry.getKey()))
+                        throw new IllegalArgumentException("FlagEncoder " + encoder.toString() + " requires the TagParser '" + entry.getKey() + "' and this must be created before adding the FlagEncoder");
+
+                } else {
+                    add(entry.getValue());
+                }
+            }
+
             return this;
         }
 
@@ -183,24 +191,23 @@ public class EncodingManager {
             if (em.edgeEncoders.isEmpty()) {
                 // we have to add a fake encoder that uses 0 bits of the old flags for backward compatibility with EncodingManager
                 add(new CarFlagEncoder(0, 1, 0) {
-                    @Override
-                    public int defineWayBits(int index, int shift) {
-                        return shift;
-                    }
 
-                    public long acceptWay(ReaderWay way) {
-                        // TODO is this correct? if one way is rejected from one EncodedValue then it won't be parsed at all
+                    @Override
+                    public Access getAccess(ReaderWay way) {
+                        // if one way is needed from one EncodedValue then it parsed the way
                         for (ReaderWayFilter filter : em.filters) {
-                            if (!filter.accept(way))
-                                return 0;
+                            if (filter.accept(way))
+                                return Access.WAY;
                         }
-                        return 1;
+                        return Access.CAN_SKIP;
                     }
 
                     @Override
-                    public long handleWayTags(ReaderWay way, long allowed, long relationFlags) {
+                    public IntsRef handleWayTags(IntsRef ints, ReaderWay way, Access access, long relationFlags) {
                         // for backward compatibility return flags=1111...
-                        return ~0;
+                        for (int i = 0; i < ints.length; i++)
+                            ints.ints[i] = ~0;
+                        return ints;
                     }
 
                     @Override
@@ -223,19 +230,6 @@ public class EncodingManager {
                         return oldRelationFlags;
                     }
 
-                    public long flagsDefault(boolean forward, boolean backward) {
-                        // TODO deprecate usage of flags
-                        return 0;
-                    }
-
-                    /**
-                     * Reverse flags, to do so all encoders are called.
-                     */
-                    @Override
-                    public long reverseFlags(long flags) {
-                        return flags;
-                    }
-
                     @Override
                     public boolean supports(Class<?> feature) {
                         return super.supports(feature);
@@ -251,12 +245,42 @@ public class EncodingManager {
                 em.bitsForEdgeFlags = 4 * 8;
 
             } else {
-                if (em.bitsForEdgeFlags == 0)
-                    throw new IllegalStateException("bytes_for_flags was not specified?");
+
+                for (FlagEncoder flagEncoder : em.edgeEncoders) {
+                    AbstractFlagEncoder encoder = (AbstractFlagEncoder) flagEncoder;
+
+                    int currentEncoderIndex = em.edgeEncoders.size();
+                    int usedBits = encoder.defineNodeBits(currentEncoderIndex, nextNodeBit);
+                    if (usedBits > em.bitsForEdgeFlags)
+                        throw new IllegalArgumentException(String.format(ERR, usedBits, em.bitsForEdgeFlags, "node"));
+                    encoder.setNodeBitMask(usedBits - nextNodeBit, nextNodeBit);
+                    nextNodeBit = usedBits;
+
+                    encoder.initEncodedValues(getPrefix(encoder), currentEncoderIndex);
+                    encoder.setRegistered(true);
+                    usedBits = encoder.defineRelationBits(currentEncoderIndex, nextRelBit);
+                    if (usedBits > em.bitsForEdgeFlags)
+                        throw new IllegalArgumentException(String.format(ERR, usedBits, em.bitsForEdgeFlags, "relation"));
+                    encoder.setRelBitMask(usedBits - nextRelBit, nextRelBit);
+                    nextRelBit = usedBits;
+
+                    // turn flag bits are independent from edge encoder bits
+                    usedBits = encoder.defineTurnBits(currentEncoderIndex, nextTurnBit);
+                    if (usedBits > em.bitsForTurnFlags)
+                        throw new IllegalArgumentException(String.format(ERR, usedBits, em.bitsForTurnFlags, "turn"));
+                    nextTurnBit = usedBits;
+
+                    if (em.bitsForEdgeFlags == 0)
+                        throw new IllegalStateException("bytes_for_flags was not specified?");
+                }
             }
 
             buildCalled = true;
             return em;
+        }
+
+        static String getPrefix(FlagEncoder encoder) {
+            return encoder.toString() + ".";
         }
 
         private void check() {
@@ -284,26 +308,31 @@ public class EncodingManager {
         return extendedDataSize;
     }
 
-    public StringEncodedValue getEncodedValueString(String key) {
-        return getEncodedValue(key, StringEncodedValue.class);
-    }
-
+    @Override
     public BooleanEncodedValue getBooleanEncodedValue(String key) {
         return getEncodedValue(key, BooleanEncodedValue.class);
     }
 
+    @Override
     public IntEncodedValue getIntEncodedValue(String key) {
         return getEncodedValue(key, IntEncodedValue.class);
     }
 
+    @Override
     public DecimalEncodedValue getDecimalEncodedValue(String key) {
         return getEncodedValue(key, DecimalEncodedValue.class);
     }
 
-    public <T extends EncodedValue> T getEncodedValue(String key, Class<T> clazz) {
+    @Override
+    public StringEncodedValue getStringEncodedValue(String key) {
+        return getEncodedValue(key, StringEncodedValue.class);
+    }
+
+    @Override
+    public <T extends EncodedValue> T getEncodedValue(String key, Class<T> encodedValueType) {
         TagParser prop = parsers.get(key);
         if (prop == null)
-            throw new IllegalArgumentException("Cannot find parser " + key + " for encoded value in existing collection: " + parsers);
+            throw new IllegalArgumentException("Cannot find encoded value " + key + " in existing collection: " + parsers);
         return (T) prop.getEncodedValue();
     }
 
@@ -315,13 +344,13 @@ public class EncodingManager {
 
     static List<FlagEncoder> parseEncoderString(FlagEncoderFactory factory, String encoderList) {
         if (encoderList.contains(":"))
-            throw new IllegalArgumentException("EncodingManager does no longer use reflection instantiate encoders directly.");
+            throw new IllegalArgumentException("EncodingManager does no longer use reflection: instantiate encoders directly.");
 
         if (!encoderList.equals(encoderList.toLowerCase()))
-            throw new IllegalArgumentException("Since 0.7 EncodingManager does no longer accept upper case vehicles: " + encoderList);
+            throw new IllegalArgumentException("Since 0.7 the EncodingManager does no longer accept upper case vehicles: " + encoderList);
 
         String[] entries = encoderList.split(",");
-        List<FlagEncoder> resultEncoders = new ArrayList<FlagEncoder>();
+        List<FlagEncoder> resultEncoders = new ArrayList<>();
 
         for (String entry : entries) {
             entry = entry.trim().toLowerCase();
@@ -399,13 +428,54 @@ public class EncodingManager {
     /**
      * Determine whether a way is routable for one of the added encoders.
      */
-    public long acceptWay(ReaderWay way) {
-        long includeWay = 0;
+    public boolean acceptWay(ReaderWay way, AcceptWay acceptWay) {
         for (AbstractFlagEncoder encoder : edgeEncoders) {
-            includeWay |= encoder.acceptWay(way);
+            acceptWay.set(encoder.toString(), encoder.getAccess(way));
+        }
+        return acceptWay.hasAccepted();
+    }
+
+    public static class AcceptWay {
+        private Map<String, Access> accessMap;
+        boolean hasAccepted = false;
+
+        public AcceptWay() {
+            this.accessMap = new HashMap<>(5);
         }
 
-        return includeWay;
+        private Access get(String key) {
+            Access res = accessMap.get(key);
+            if (res == null)
+                throw new IllegalArgumentException("Couldn't fetch access value for key " + key);
+
+            return res;
+        }
+
+        private void set(String key, Access access) {
+            accessMap.put(key, access);
+            if (access != Access.CAN_SKIP)
+                hasAccepted = true;
+        }
+
+        public boolean hasAccepted() {
+            return hasAccepted;
+        }
+    }
+
+    public enum Access {
+        WAY, FERRY, CAN_SKIP;
+
+        boolean isFerry() {
+            return this.ordinal() == FERRY.ordinal();
+        }
+
+        boolean isWay() {
+            return this.ordinal() == WAY.ordinal();
+        }
+
+        boolean canSkip() {
+            return this.ordinal() == CAN_SKIP.ordinal();
+        }
     }
 
     public long handleRelationTags(ReaderRelation relation, long oldRelationFlags) {
@@ -419,39 +489,38 @@ public class EncodingManager {
 
     /**
      * Processes way properties of different kind to determine speed and direction. Properties are
-     * directly encoded in 8 bytes.
+     * directly encoded in the provided IntsRef.
      *
      * @param relationFlags The preprocessed relation flags is used to influence the way properties.
-     * @return the encoded flags
      */
-    public long handleWayTags(ReaderWay way, long includeWay, long relationFlags) {
-        long flags = 0;
+    public IntsRef handleWayTags(IntsRef ints, ReaderWay way, AcceptWay acceptWay, long relationFlags) {
         for (AbstractFlagEncoder encoder : edgeEncoders) {
-            flags |= encoder.handleWayTags(way, includeWay, relationFlags & encoder.getRelBitMask());
+            encoder.handleWayTags(ints, way, acceptWay.get(encoder.toString()), relationFlags & encoder.getRelBitMask());
         }
 
-        return flags;
+        parser.parse(parsers.values(), ints, way);
+        return ints;
     }
 
-    public long flagsDefault(boolean forward, boolean backward) {
-        long flags = 0;
-        for (AbstractFlagEncoder encoder : edgeEncoders) {
-            flags |= encoder.flagsDefault(forward, backward);
-        }
-        return flags;
-    }
-
-    /**
-     * Reverse flags, to do so all encoders are called.
-     */
-    public long reverseFlags(long flags) {
-        // performance critical
-        int len = edgeEncoders.size();
-        for (int i = 0; i < len; i++) {
-            flags = edgeEncoders.get(i).reverseFlags(flags);
-        }
-        return flags;
-    }
+//    public long flagsDefault(boolean forward, boolean backward) {
+//        long flags = 0;
+//        for (AbstractFlagEncoder encoder : edgeEncoders) {
+//            flags |= encoder.flagsDefault(forward, backward);
+//        }
+//        return flags;
+//    }
+//
+//    /**
+//     * Reverse flags, to do so all encoders are called.
+//     */
+//    public long reverseFlags(long flags) {
+//        // performance critical
+//        int len = edgeEncoders.size();
+//        for (int i = 0; i < len; i++) {
+//            flags = edgeEncoders.get(i).reverseFlags(flags);
+//        }
+//        return flags;
+//    }
 
     /**
      * Analyze tags on osm node. Store node tags (barriers etc) for later usage while parsing way.
@@ -493,15 +562,13 @@ public class EncodingManager {
         for (AbstractFlagEncoder encoder : edgeEncoders) {
             encoder.applyWayTags(way, edge);
         }
-
-        parser.parse(way, edge, parsers.values());
     }
 
     /**
      * The returned list is never empty.
      */
     public List<FlagEncoder> fetchEdgeEncoders() {
-        List<FlagEncoder> list = new ArrayList<FlagEncoder>();
+        List<FlagEncoder> list = new ArrayList<>();
         list.addAll(edgeEncoders);
         return list;
     }
